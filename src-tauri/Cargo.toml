@@ -1,0 +1,43 @@
+[package]
+name = "envbox"
+version = "1.0.0"
+description = "统一识别、管理与切换开发环境变量的可视化桌面工具"
+authors = ["Nagnip <xu814667@gmail.com>"]
+edition = "2021"
+
+[lib]
+name = "envbox_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+winapi = { version = "0.3", features = [
+    "winuser",
+    "shellapi",
+    "handleapi",
+    "processthreadsapi",
+    "securitybaseapi",
+    "winnt",
+    "minwindef",
+    "windef",
+    "winbase",
+    "errhandlingapi",
+    "sysinfoapi",
+    "minwinbase",
+    "synchapi",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

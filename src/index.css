@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* 深色主题（默认）：neutral 调色板取标准值 */
+  :root,
+  .theme-dark {
+    color-scheme: dark;
+    --n-50: 250 250 250;
+    --n-100: 245 245 245;
+    --n-200: 229 229 229;
+    --n-300: 212 212 212;
+    --n-400: 163 163 163;
+    --n-500: 115 115 115;
+    --n-600: 82 82 82;
+    --n-700: 64 64 64;
+    --n-800: 38 38 38;
+    --n-900: 23 23 23;
+    --n-950: 10 10 10;
+  }
+
+  /* 浅色主题：把 neutral 调色板整体翻转（950=最亮背景，100=深色文字），
+     这样所有现有的 neutral-* 类无需改动即可自动适配浅色 */
+  .theme-light {
+    color-scheme: light;
+    --n-50: 10 10 10;
+    --n-100: 23 23 23;
+    --n-200: 38 38 38;
+    --n-300: 64 64 64;
+    --n-400: 82 82 82;
+    --n-500: 115 115 115;
+    --n-600: 160 160 160;
+    --n-700: 210 210 210;
+    --n-800: 228 228 228;
+    --n-900: 244 244 245;
+    --n-950: 255 255 255;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-neutral-950 text-neutral-100 antialiased;
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  /* 细滚动条 */
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    @apply bg-neutral-700 rounded-full;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    @apply bg-neutral-600;
+    background-clip: content-box;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-neutral-800 bg-neutral-900/60 backdrop-blur;
+  }
+  .btn {
+    @apply inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors;
+  }
+  .btn-ghost {
+    @apply btn text-neutral-300 hover:bg-neutral-800 hover:text-white;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white hover:bg-brand-500;
+  }
+
+  /* 彩色徽标：默认深色主题配色（浅色文字 + 半透明底） */
+  .tag {
+    @apply inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium;
+  }
+  .tag-brand {
+    @apply bg-brand-600/15 text-brand-300;
+  }
+  .tag-emerald {
+    @apply bg-emerald-500/15 text-emerald-300;
+  }
+  .tag-rose {
+    @apply bg-rose-500/15 text-rose-300;
+  }
+  .tag-amber {
+    @apply bg-amber-500/15 text-amber-400;
+  }
+}
+
+/* 浅色主题下徽标改用深色文字 + 更淡底色，保证对比度 */
+.theme-light .tag-brand {
+  background-color: rgb(79 70 229 / 0.12);
+  color: rgb(67 56 202);
+}
+.theme-light .tag-emerald {
+  background-color: rgb(16 185 129 / 0.16);
+  color: rgb(4 120 87);
+}
+.theme-light .tag-rose {
+  background-color: rgb(244 63 94 / 0.12);
+  color: rgb(190 18 60);
+}
+.theme-light .tag-amber {
+  background-color: rgb(245 158 11 / 0.18);
+  color: rgb(180 83 9);
+}
+
+/* 浅色主题下把浅紫强调色（变量名、图标）加深，提升可读性 */
+.theme-light .text-brand-300 {
+  color: rgb(67 56 202);
+}
