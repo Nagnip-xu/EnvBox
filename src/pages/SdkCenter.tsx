@@ -21,7 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { EngineStatus, InstallableVersion, JobProgress, SdkKind, SdkVersion } from "../types";
-import { api, onJobProgress } from "../lib/tauri";
+import { api, errorMessage, onJobProgress } from "../lib/tauri";
 import { useStore } from "../store/useStore";
 import {
   getCachedEngines,
@@ -140,7 +140,7 @@ export default function SdkCenter() {
       }
       bumpRefresh();
     } catch (e) {
-      pushToast(t("toast.switchFail", { err: `${e}` }), "error");
+      pushToast(t("toast.switchFail", { err: errorMessage(e) }), "error");
     }
   }
 
@@ -149,7 +149,7 @@ export default function SdkCenter() {
       await api.openTerminalWith(s.kind, s.home);
       pushToast(t("toast.terminalOpened"), "success");
     } catch (e) {
-      pushToast(t("toast.terminalFail", { err: `${e}` }), "error");
+      pushToast(t("toast.terminalFail", { err: errorMessage(e) }), "error");
     }
   }
 
@@ -358,12 +358,13 @@ function UninstallModal({
   const { pushToast, t } = useStore();
   const logRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
+  const jobId = useRef<string | null>(null);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     (async () => {
       unlisten = await onJobProgress((p: JobProgress) => {
-        if (p.action !== "uninstall") return;
+        if (p.action !== "uninstall" || p.jobId !== jobId.current) return;
         if (p.logLine) setLines((prev) => [...prev, p.logLine!]);
         setPhase(p.phase);
         if (p.phase === "done") {
@@ -380,11 +381,12 @@ function UninstallModal({
           t("sdk.log.dir", { home: target.home }),
         ]);
         try {
-          await api.uninstallSdk(target.kind, target.home);
+          jobId.current = await api.uninstallSdk(target.kind, target.home);
         } catch (e) {
-          setLines((prev) => [...prev, t("sdk.log.startFail", { err: `${e}` })]);
+          const message = errorMessage(e);
+          setLines((prev) => [...prev, t("sdk.log.startFail", { err: message })]);
           setPhase("error");
-          pushToast(t("toast.uninstallStartFail", { err: `${e}` }), "error");
+          pushToast(t("toast.uninstallStartFail", { err: message }), "error");
         }
       }
     })();
@@ -454,6 +456,7 @@ function InstallModal({
   const [lines, setLines] = useState<string[]>([]);
   const { pushToast, installPath, t } = useStore();
   const logRef = useRef<HTMLDivElement>(null);
+  const activeJobId = useRef<string | null>(null);
 
   useEffect(() => {
     api.listInstallable(kind).then((l) => {
@@ -474,6 +477,7 @@ function InstallModal({
     setPhase("downloading");
     setLines([]);
     const unlisten = await onJobProgress((p: JobProgress) => {
+      if (p.action !== "install" || p.jobId !== activeJobId.current) return;
       if (p.logLine) setLines((prev) => [...prev, p.logLine!]);
       setPhase(p.phase);
       if (p.phase === "done") {
@@ -488,11 +492,19 @@ function InstallModal({
       }
     });
     try {
-      await api.installSdk(kind, item.distro, item.version, engine, engine === "winget" ? installPath : "");
+      activeJobId.current = await api.installSdk(
+        kind,
+        item.distro,
+        item.version,
+        engine,
+        engine === "winget" ? installPath : ""
+      );
     } catch (e) {
-      setLines((prev) => [...prev, t("sdk.log.startFail", { err: `${e}` })]);
+      const message = errorMessage(e);
+      setLines((prev) => [...prev, t("sdk.log.startFail", { err: message })]);
       setPhase("error");
-      pushToast(t("toast.installStartFail", { err: `${e}` }), "error");
+      pushToast(t("toast.installStartFail", { err: message }), "error");
+      unlisten();
     }
   }
 

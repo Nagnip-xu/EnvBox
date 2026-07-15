@@ -93,3 +93,12 @@ pub struct EngineStatus {
     pub scoop: bool,
     pub elevated: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportPreview {
+    pub user_count: usize,
+    pub system_count: usize,
+    pub sensitive_count: usize,
+    pub requires_elevation: bool,
+}

@@ -29,7 +29,10 @@ fn where_lookup(tool: &str) -> bool {
 /// winget 这类「应用执行别名」的重解析点（普通 fs::exists 对别名会误判）。
 fn path_exists_shell(expr: &str) -> bool {
     let mut cmd = Command::new("cmd");
-    cmd.args(["/C", &format!("if exist \"{}\" (exit 0) else (exit 1)", expr)]);
+    cmd.args([
+        "/C",
+        &format!("if exist \"{}\" (exit 0) else (exit 1)", expr),
+    ]);
     no_window(&mut cmd);
     cmd.stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -87,10 +90,34 @@ pub fn catalog(kind: &str) -> Vec<InstallableVersion> {
     match kind {
         "jdk" => vec![
             // Eclipse Temurin（Adoptium）—— 最主流的免费 OpenJDK
-            mk("Temurin", "21", true, Some("EclipseAdoptium.Temurin.21.JDK"), Some("temurin21-jdk")),
-            mk("Temurin", "17", true, Some("EclipseAdoptium.Temurin.17.JDK"), Some("temurin17-jdk")),
-            mk("Temurin", "11", true, Some("EclipseAdoptium.Temurin.11.JDK"), Some("temurin11-jdk")),
-            mk("Temurin", "8", true, Some("EclipseAdoptium.Temurin.8.JDK"), Some("temurin8-jdk")),
+            mk(
+                "Temurin",
+                "21",
+                true,
+                Some("EclipseAdoptium.Temurin.21.JDK"),
+                Some("temurin21-jdk"),
+            ),
+            mk(
+                "Temurin",
+                "17",
+                true,
+                Some("EclipseAdoptium.Temurin.17.JDK"),
+                Some("temurin17-jdk"),
+            ),
+            mk(
+                "Temurin",
+                "11",
+                true,
+                Some("EclipseAdoptium.Temurin.11.JDK"),
+                Some("temurin11-jdk"),
+            ),
+            mk(
+                "Temurin",
+                "8",
+                true,
+                Some("EclipseAdoptium.Temurin.8.JDK"),
+                Some("temurin8-jdk"),
+            ),
             // Oracle JDK —— 官方原厂（商用生产需订阅授权）
             mk("Oracle", "21", true, Some("Oracle.JDK.21"), None),
             mk("Oracle", "17", true, Some("Oracle.JDK.17"), None),
@@ -110,19 +137,67 @@ pub fn catalog(kind: &str) -> Vec<InstallableVersion> {
         ],
         "node" => vec![
             // 官方 Node.js（nodejs.org）
-            mk("官方 (LTS)", "LTS", true, Some("OpenJS.NodeJS.LTS"), Some("nodejs-lts")),
-            mk("官方 (Current)", "Current", false, Some("OpenJS.NodeJS"), Some("nodejs")),
+            mk(
+                "官方 (LTS)",
+                "LTS",
+                true,
+                Some("OpenJS.NodeJS.LTS"),
+                Some("nodejs-lts"),
+            ),
+            mk(
+                "官方 (Current)",
+                "Current",
+                false,
+                Some("OpenJS.NodeJS"),
+                Some("nodejs"),
+            ),
             // nvm-windows 多版本管理器
-            mk("nvm-windows", "版本管理器", false, Some("CoreyButler.NVMforWindows"), Some("nvm")),
+            mk(
+                "nvm-windows",
+                "版本管理器",
+                false,
+                Some("CoreyButler.NVMforWindows"),
+                Some("nvm"),
+            ),
         ],
         "python" => vec![
             // 官方 CPython（python.org）
-            mk("官方 CPython", "3.13", true, Some("Python.Python.3.13"), None),
-            mk("官方 CPython", "3.12", true, Some("Python.Python.3.12"), Some("python")),
-            mk("官方 CPython", "3.11", true, Some("Python.Python.3.11"), None),
-            mk("官方 CPython", "3.10", false, Some("Python.Python.3.10"), None),
+            mk(
+                "官方 CPython",
+                "3.13",
+                true,
+                Some("Python.Python.3.13"),
+                None,
+            ),
+            mk(
+                "官方 CPython",
+                "3.12",
+                true,
+                Some("Python.Python.3.12"),
+                Some("python"),
+            ),
+            mk(
+                "官方 CPython",
+                "3.11",
+                true,
+                Some("Python.Python.3.11"),
+                None,
+            ),
+            mk(
+                "官方 CPython",
+                "3.10",
+                false,
+                Some("Python.Python.3.10"),
+                None,
+            ),
             // Astral uv（现代 Python 版本/依赖管理器）
-            mk("uv (Astral)", "版本管理器", false, Some("astral-sh.uv"), Some("uv")),
+            mk(
+                "uv (Astral)",
+                "版本管理器",
+                false,
+                Some("astral-sh.uv"),
+                Some("uv"),
+            ),
         ],
         "go" => vec![
             // 官方 Go（go.dev）
@@ -130,20 +205,68 @@ pub fn catalog(kind: &str) -> Vec<InstallableVersion> {
         ],
         "rust" => vec![
             // 官方 rustup（可管理 stable/beta/nightly 多工具链）
-            mk("官方 rustup", "stable", true, Some("Rustlang.Rustup"), Some("rustup")),
+            mk(
+                "官方 rustup",
+                "stable",
+                true,
+                Some("Rustlang.Rustup"),
+                Some("rustup"),
+            ),
         ],
         "dotnet" => vec![
             // 官方 .NET SDK（微软）
-            mk("官方 .NET SDK", "10", true, Some("Microsoft.DotNet.SDK.10"), None),
-            mk("官方 .NET SDK", "9", false, Some("Microsoft.DotNet.SDK.9"), None),
-            mk("官方 .NET SDK", "8 (LTS)", true, Some("Microsoft.DotNet.SDK.8"), None),
-            mk("官方 .NET SDK", "6 (LTS)", true, Some("Microsoft.DotNet.SDK.6"), None),
+            mk(
+                "官方 .NET SDK",
+                "10",
+                true,
+                Some("Microsoft.DotNet.SDK.10"),
+                None,
+            ),
+            mk(
+                "官方 .NET SDK",
+                "9",
+                false,
+                Some("Microsoft.DotNet.SDK.9"),
+                None,
+            ),
+            mk(
+                "官方 .NET SDK",
+                "8 (LTS)",
+                true,
+                Some("Microsoft.DotNet.SDK.8"),
+                None,
+            ),
+            mk(
+                "官方 .NET SDK",
+                "6 (LTS)",
+                true,
+                Some("Microsoft.DotNet.SDK.6"),
+                None,
+            ),
         ],
         "ruby" => vec![
             // 官方 RubyInstaller（含 DevKit，编译原生扩展需要）
-            mk("官方 RubyInstaller", "3.3 (含 DevKit)", true, Some("RubyInstallerTeam.RubyWithDevKit.3.3"), None),
-            mk("官方 RubyInstaller", "3.2 (含 DevKit)", true, Some("RubyInstallerTeam.RubyWithDevKit.3.2"), None),
-            mk("官方 RubyInstaller", "3.3", true, Some("RubyInstallerTeam.Ruby.3.3"), None),
+            mk(
+                "官方 RubyInstaller",
+                "3.3 (含 DevKit)",
+                true,
+                Some("RubyInstallerTeam.RubyWithDevKit.3.3"),
+                None,
+            ),
+            mk(
+                "官方 RubyInstaller",
+                "3.2 (含 DevKit)",
+                true,
+                Some("RubyInstallerTeam.RubyWithDevKit.3.2"),
+                None,
+            ),
+            mk(
+                "官方 RubyInstaller",
+                "3.3",
+                true,
+                Some("RubyInstallerTeam.Ruby.3.3"),
+                None,
+            ),
         ],
         "php" => vec![
             // 官方 PHP（php.net）
@@ -157,15 +280,33 @@ pub fn catalog(kind: &str) -> Vec<InstallableVersion> {
         ],
         "maven" => vec![
             // 官方 Apache Maven
-            mk("官方 Apache Maven", "latest", true, Some("Apache.Maven"), Some("maven")),
+            mk(
+                "官方 Apache Maven",
+                "latest",
+                true,
+                Some("Apache.Maven"),
+                Some("maven"),
+            ),
         ],
         "gradle" => vec![
             // 官方 Gradle
-            mk("官方 Gradle", "latest", true, Some("Gradle.Gradle"), Some("gradle")),
+            mk(
+                "官方 Gradle",
+                "latest",
+                true,
+                Some("Gradle.Gradle"),
+                Some("gradle"),
+            ),
         ],
         "deno" => vec![
             // 官方 Deno
-            mk("官方 Deno", "latest", true, Some("DenoLand.Deno"), Some("deno")),
+            mk(
+                "官方 Deno",
+                "latest",
+                true,
+                Some("DenoLand.Deno"),
+                Some("deno"),
+            ),
         ],
         "bun" => vec![
             // 官方 Bun
@@ -187,7 +328,7 @@ fn spawn_stream(
     target: String,
     program: String,
     args: Vec<String>,
-    after_success: Option<Box<dyn FnOnce() + Send>>,
+    after_success: Option<Box<dyn FnOnce() -> Result<(), String> + Send>>,
 ) {
     std::thread::spawn(move || {
         emit(
@@ -196,7 +337,12 @@ fn spawn_stream(
                 job_id: job_id.clone(),
                 action: action.clone(),
                 target: target.clone(),
-                phase: if action == "install" { "downloading" } else { "cleaning" }.into(),
+                phase: if action == "install" {
+                    "downloading"
+                } else {
+                    "cleaning"
+                }
+                .into(),
                 log_line: Some(format!("$ {} {}", program, args.join(" "))),
             },
         );
@@ -261,7 +407,19 @@ fn spawn_stream(
                     );
                 }
                 if let Some(cb) = after_success {
-                    cb();
+                    if let Err(error) = cb() {
+                        emit(
+                            &app,
+                            JobProgress {
+                                job_id,
+                                action,
+                                target,
+                                phase: "error".into(),
+                                log_line: Some(format!("主程序已完成，但环境清理失败: {error}")),
+                            },
+                        );
+                        return;
+                    }
                 }
                 win::broadcast_env_change();
                 emit(
@@ -308,6 +466,22 @@ pub fn install_sdk(
     engine: &str,
     location: &str,
 ) -> Result<String, String> {
+    if crate::sdk_scanner::kind_spec(kind).is_none() {
+        return Err(format!("不支持的 SDK 类型: {kind}"));
+    }
+    if !matches!(engine, "winget" | "scoop") {
+        return Err(format!("不支持的安装引擎: {engine}"));
+    }
+    let status = engine_status();
+    if (engine == "winget" && !status.winget) || (engine == "scoop" && !status.scoop) {
+        return Err(format!("安装引擎 {engine} 当前不可用"));
+    }
+    if location.contains('\0') {
+        return Err("安装路径包含非法字符".into());
+    }
+    if !location.trim().is_empty() && !Path::new(location.trim()).is_absolute() {
+        return Err("自定义安装路径必须是绝对路径".into());
+    }
     let item = catalog(kind)
         .into_iter()
         .find(|i| i.version == version && (distro.is_empty() || i.distro == distro))
@@ -320,7 +494,7 @@ pub fn install_sdk(
             let id = item.scoop_id.ok_or("该版本不支持 scoop")?;
             ("scoop".to_string(), vec!["install".to_string(), id])
         }
-        _ => {
+        "winget" => {
             let id = item.winget_id.ok_or("该版本不支持 winget")?;
             let mut args = vec![
                 "install".to_string(),
@@ -337,15 +511,24 @@ pub fn install_sdk(
             }
             ("winget".to_string(), args)
         }
+        _ => unreachable!("engine validated above"),
     };
 
     snapshot::audit("install", &target);
-    spawn_stream(app, job_id.clone(), "install".into(), target, program, args, None);
+    spawn_stream(
+        app,
+        job_id.clone(),
+        "install".into(),
+        target,
+        program,
+        args,
+        None,
+    );
     Ok(job_id)
 }
 
 /// 移除两个作用域 PATH 中位于 home 目录下的条目，并清理 JAVA_HOME/GOROOT
-fn cleanup_env_for_home(kind: &str, home: &str) {
+fn cleanup_env_for_home(kind: &str, home: &str) -> Result<(), String> {
     let vars = env_registry::all_vars_map();
     let home_l = home.to_lowercase().trim_end_matches('\\').to_string();
     for scope in ["user", "system"] {
@@ -362,7 +545,8 @@ fn cleanup_env_for_home(kind: &str, home: &str) {
                     !resolved.trim_end_matches('\\').starts_with(&home_l)
                 })
                 .collect();
-            let _ = env_registry::set_env_var(scope, "Path", &kept.join(";"));
+            env_registry::set_env_var(scope, "Path", &kept.join(";"))
+                .map_err(|e| format!("清理 {scope} PATH 失败: {e}"))?;
         }
     }
     let home_var = crate::sdk_scanner::kind_spec(kind).and_then(|s| s.home_var);
@@ -373,11 +557,13 @@ fn cleanup_env_for_home(kind: &str, home: &str) {
             }
             if let Some(v) = env_registry::get_scope_value(scope, hv) {
                 if v.to_lowercase().trim_end_matches('\\') == home_l {
-                    let _ = env_registry::delete_env_var(scope, hv);
+                    env_registry::delete_env_var(scope, hv)
+                        .map_err(|e| format!("清理 {scope} {hv} 失败: {e}"))?;
                 }
             }
         }
     }
+    Ok(())
 }
 
 /// 在 Windows「卸载」注册表中查找与某安装目录匹配的卸载信息。
@@ -415,7 +601,10 @@ fn find_uninstall_command(home: &str) -> Option<(String, String)> {
             };
             let install_loc: String = app.get_value("InstallLocation").unwrap_or_default();
             let display_icon: String = app.get_value("DisplayIcon").unwrap_or_default();
-            let loc_l = install_loc.to_lowercase().trim_end_matches('\\').to_string();
+            let loc_l = install_loc
+                .to_lowercase()
+                .trim_end_matches('\\')
+                .to_string();
             let icon_l = display_icon.to_lowercase();
             let matched = (!loc_l.is_empty() && loc_l == home_key)
                 || (!home_key.is_empty() && icon_l.starts_with(&home_key));
@@ -425,7 +614,11 @@ fn find_uninstall_command(home: &str) -> Option<(String, String)> {
             let name: String = app.get_value("DisplayName").unwrap_or_else(|_| sub.clone());
             let quiet: String = app.get_value("QuietUninstallString").unwrap_or_default();
             let normal: String = app.get_value("UninstallString").unwrap_or_default();
-            let cmd = if !quiet.trim().is_empty() { quiet } else { normal };
+            let cmd = if !quiet.trim().is_empty() {
+                quiet
+            } else {
+                normal
+            };
             if !cmd.trim().is_empty() {
                 return Some((name, cmd));
             }
@@ -483,6 +676,27 @@ fn emit_uninstall(app: &AppHandle, job_id: &str, home: &str, phase: &str, line: 
 }
 
 pub fn uninstall_sdk(app: AppHandle, kind: &str, home: &str) -> Result<String, String> {
+    let spec =
+        crate::sdk_scanner::kind_spec(kind).ok_or_else(|| format!("不支持的 SDK 类型: {kind}"))?;
+    let home_path = Path::new(home);
+    if !home_path.is_absolute() || !home_path.is_dir() {
+        return Err("SDK 目录不存在或不是绝对路径".into());
+    }
+    if home_path.parent().is_none() {
+        return Err("拒绝卸载磁盘根目录".into());
+    }
+    let contains_expected_exe = if spec.exe_in_subdir {
+        spec.path_suffixes
+            .iter()
+            .filter(|s| !s.is_empty())
+            .any(|s| home_path.join(s).join(spec.exe).is_file())
+            || home_path.join("bin").join(spec.exe).is_file()
+    } else {
+        home_path.join(spec.exe).is_file()
+    };
+    if !contains_expected_exe {
+        return Err(format!("目录中未找到 {}，为避免误删已取消卸载", spec.exe));
+    }
     let job_id = win::timestamp_id();
     let target = home.to_string();
     let home_owned = home.to_string();
@@ -497,9 +711,8 @@ pub fn uninstall_sdk(app: AppHandle, kind: &str, home: &str) -> Result<String, S
             .and_then(|p| p.file_name())
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        let cb: Box<dyn FnOnce() + Send> = Box::new(move || {
-            cleanup_env_for_home(&kind_owned, &home_owned);
-        });
+        let cb: Box<dyn FnOnce() -> Result<(), String> + Send> =
+            Box::new(move || cleanup_env_for_home(&kind_owned, &home_owned));
         spawn_stream(
             app,
             job_id.clone(),
@@ -515,50 +728,68 @@ pub fn uninstall_sdk(app: AppHandle, kind: &str, home: &str) -> Result<String, S
     // 优先：调用官方卸载程序（清注册表/添加删除程序/开始菜单等）
     if let Some((name, raw_cmd)) = find_uninstall_command(home) {
         let (program, params) = to_uninstall_invocation(&raw_cmd);
+        let worker_job_id = job_id.clone();
         std::thread::spawn(move || {
             emit_uninstall(
                 &app,
-                &job_id,
+                &worker_job_id,
                 &home_owned,
                 "installing",
                 &format!("调用官方卸载程序：{}", name),
             );
-            emit_uninstall(&app, &job_id, &home_owned, "installing", &format!("$ {} {}", program, params));
+            emit_uninstall(
+                &app,
+                &worker_job_id,
+                &home_owned,
+                "installing",
+                &format!("$ {} {}", program, params),
+            );
 
             match win::run_elevated_wait(&program, &params) {
-                Ok(code) => {
+                Ok(code) if code == 0 => {
                     emit_uninstall(
                         &app,
-                        &job_id,
+                        &worker_job_id,
                         &home_owned,
                         "cleaning",
                         &format!("官方卸载完成(退出码 {})，正在清理残留...", code),
                     );
-                    // 残留目录（官方卸载器通常已清除；若仍在则尝试删除，必要时提权）
+                    // 官方卸载器结束后不递归删除外部安装目录，避免误伤共享内容。
                     if Path::new(&home_owned).exists() {
-                        if std::fs::remove_dir_all(&home_owned).is_err()
-                            && Path::new(&home_owned).exists()
-                        {
-                            let _ = win::run_elevated_wait(
-                                "cmd.exe",
-                                &format!("/c rmdir /s /q \"{}\"", home_owned),
-                            );
-                        }
+                        emit_uninstall(
+                            &app,
+                            &worker_job_id,
+                            &home_owned,
+                            "cleaning",
+                            "检测到安装目录仍存在；为避免误删共享文件，EnvBox 已保留该目录",
+                        );
                     }
-                    cleanup_env_for_home(&kind_owned, &home_owned);
+                    if let Err(error) = cleanup_env_for_home(&kind_owned, &home_owned) {
+                        emit_uninstall(&app, &worker_job_id, &home_owned, "error", &error);
+                        return;
+                    }
                     win::broadcast_env_change();
                     emit_uninstall(
                         &app,
-                        &job_id,
+                        &worker_job_id,
                         &home_owned,
                         "done",
                         "已彻底卸载并清理环境变量",
                     );
                 }
+                Ok(code) => {
+                    emit_uninstall(
+                        &app,
+                        &worker_job_id,
+                        &home_owned,
+                        "error",
+                        &format!("官方卸载程序返回非零退出码 {code}，未清理环境变量"),
+                    );
+                }
                 Err(e) => {
                     emit_uninstall(
                         &app,
-                        &job_id,
+                        &worker_job_id,
                         &home_owned,
                         "error",
                         &format!("卸载失败：{}", e),
@@ -566,39 +797,10 @@ pub fn uninstall_sdk(app: AppHandle, kind: &str, home: &str) -> Result<String, S
                 }
             }
         });
-        return Ok(String::new());
+        return Ok(job_id);
     }
 
-    // 兜底：绿色/便携式安装（无注册表卸载项）→ 删除目录 + 清理变量
-    std::thread::spawn(move || {
-        emit_uninstall(
-            &app,
-            &job_id,
-            &home_owned,
-            "cleaning",
-            &format!("未发现官方卸载程序，按便携式处理：删除目录 {}", home_owned),
-        );
-        if std::fs::remove_dir_all(&home_owned).is_err() && Path::new(&home_owned).exists() {
-            // 可能位于 Program Files，需要管理员
-            if let Err(e) =
-                win::run_elevated_wait("cmd.exe", &format!("/c rmdir /s /q \"{}\"", home_owned))
-                    .map(|_| ())
-            {
-                emit_uninstall(
-                    &app,
-                    &job_id,
-                    &home_owned,
-                    "error",
-                    &format!("删除失败(可能需要管理员权限)：{}", e),
-                );
-                return;
-            }
-        }
-        cleanup_env_for_home(&kind_owned, &home_owned);
-        win::broadcast_env_change();
-        emit_uninstall(&app, &job_id, &home_owned, "done", "已卸载并清理环境变量");
-    });
-    Ok(String::new())
+    Err("未找到可信的官方卸载程序。为避免误删外部或便携式目录，EnvBox 已取消卸载；你仍可手动删除目录后使用 PATH 清理功能。".into())
 }
 
 #[cfg(test)]
@@ -610,7 +812,9 @@ mod tests {
         let items = catalog("jdk");
         assert!(!items.is_empty());
         assert!(items.iter().any(|i| i.distro == "Temurin"));
-        assert!(items.iter().any(|i| i.engines.contains(&"winget".to_string())));
+        assert!(items
+            .iter()
+            .any(|i| i.engines.contains(&"winget".to_string())));
     }
 
     #[test]

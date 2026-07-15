@@ -37,6 +37,30 @@ const dict: Record<string, Entry> = {
     en: "Browser preview · demo data",
     ja: "ブラウザプレビュー · デモデータ",
   },
+  "topbar.exportConfirmTitle": {
+    zh: "导出环境变量",
+    zhHant: "匯出環境變數",
+    en: "Export environment variables",
+    ja: "環境変数をエクスポート",
+  },
+  "topbar.exportConfirmMessage": {
+    zh: "导出文件可能包含令牌、密码和其他敏感值。请仅保存到受信任的位置，并避免提交到版本库。",
+    zhHant: "匯出檔案可能包含權杖、密碼和其他敏感值。請僅儲存到受信任的位置，並避免提交到版本庫。",
+    en: "The export may contain tokens, passwords, and other sensitive values. Save it only to a trusted location and do not commit it to version control.",
+    ja: "エクスポートにはトークン、パスワードなどの機密値が含まれる場合があります。信頼できる場所にのみ保存し、バージョン管理へ登録しないでください。",
+  },
+  "topbar.importConfirmTitle": {
+    zh: "确认导入环境变量",
+    zhHant: "確認匯入環境變數",
+    en: "Confirm environment import",
+    ja: "環境変数のインポートを確認",
+  },
+  "topbar.importConfirmMessage": {
+    zh: "文件包含用户变量 {user} 个、系统变量 {system} 个，其中疑似敏感变量 {sensitive} 个。导入前将强制创建安全快照。",
+    zhHant: "檔案包含使用者變數 {user} 個、系統變數 {system} 個，其中疑似敏感變數 {sensitive} 個。匯入前將強制建立安全快照。",
+    en: "The file contains {user} user variables and {system} system variables, including {sensitive} potentially sensitive variables. A safety snapshot will be required before import.",
+    ja: "ファイルにはユーザー変数 {user} 件、システム変数 {system} 件、機密の可能性がある変数 {sensitive} 件が含まれます。インポート前に安全スナップショットを作成します。",
+  },
 
   // ── 通用 ─────────────────────────────────────
   "common.cancel": { zh: "取消", zhHant: "取消", en: "Cancel", ja: "キャンセル" },
@@ -48,6 +72,18 @@ const dict: Record<string, Entry> = {
   "common.run": { zh: "执行", zhHant: "執行", en: "Run", ja: "実行" },
   "common.browse": { zh: "浏览...", zhHant: "瀏覽...", en: "Browse...", ja: "参照..." },
   "common.reset": { zh: "重置", zhHant: "重設", en: "Reset", ja: "リセット" },
+  "common.revealSecret": {
+    zh: "显示敏感值",
+    zhHant: "顯示敏感值",
+    en: "Reveal sensitive value",
+    ja: "機密値を表示",
+  },
+  "common.hideSecret": {
+    zh: "隐藏敏感值",
+    zhHant: "隱藏敏感值",
+    en: "Hide sensitive value",
+    ja: "機密値を隠す",
+  },
 
   // ── 作用域 ───────────────────────────────────
   "scope.system": { zh: "系统变量", zhHant: "系統變數", en: "System Variables", ja: "システム変数" },

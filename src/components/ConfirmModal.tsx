@@ -8,6 +8,7 @@ export default function ConfirmModal({
   title,
   message,
   danger = false,
+  showSnapshotNote = true,
   confirmLabel,
   onConfirm,
   onClose,
@@ -16,6 +17,7 @@ export default function ConfirmModal({
   title: string;
   message: string;
   danger?: boolean;
+  showSnapshotNote?: boolean;
   confirmLabel?: string;
   onConfirm: () => void;
   onClose: () => void;
@@ -46,7 +48,7 @@ export default function ConfirmModal({
         {danger && <AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-400" />}
         <p className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-300">{message}</p>
       </div>
-      <p className="mt-3 text-xs text-neutral-500">{t("confirm.snapNote")}</p>
+      {showSnapshotNote && <p className="mt-3 text-xs text-neutral-500">{t("confirm.snapNote")}</p>}
       <div className="mt-5 flex justify-end gap-2">
         <button className="btn-ghost border border-neutral-800" onClick={onClose}>
           {t("common.cancel")}

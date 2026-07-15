@@ -4,6 +4,7 @@ import type {
   EnvVar,
   HealthReport,
   InstallableVersion,
+  ImportPreview,
   JobProgress,
   PathEntry,
   SdkKind,
@@ -35,6 +36,9 @@ export const api = {
   },
   async getPathEntries(): Promise<PathEntry[]> {
     return isTauri() ? invoke("get_path_entries") : mockPathEntries;
+  },
+  async scanOrphans(): Promise<PathEntry[]> {
+    return isTauri() ? invoke("scan_orphans") : mockPathEntries.filter((entry) => !entry.exists);
   },
   async scanSdks(): Promise<SdkVersion[]> {
     return isTauri() ? invoke("scan_sdks") : mockSdks;
@@ -140,7 +144,22 @@ export const api = {
     if (!isTauri()) throw new PreviewError();
     return invoke("import_vars", { path });
   },
+  async previewImport(path: string): Promise<ImportPreview> {
+    if (!isTauri()) {
+      return { userCount: 0, systemCount: 0, sensitiveCount: 0, requiresElevation: false };
+    }
+    return invoke("preview_import", { path });
+  },
 };
+
+export function errorMessage(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return String(error ?? "Unknown error");
+}
 
 /** 订阅安装/卸载进度事件，返回取消订阅函数 */
 export async function onJobProgress(

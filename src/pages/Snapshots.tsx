@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { History, RotateCcw, Camera, ScrollText, Trash2, Clock } from "lucide-react";
 import type { AuditEntry, Snapshot } from "../types";
-import { api } from "../lib/tauri";
+import { api, errorMessage } from "../lib/tauri";
 import { useStore } from "../store/useStore";
 import ConfirmModal from "../components/ConfirmModal";
 import Modal from "../components/Modal";
@@ -49,7 +49,7 @@ export default function Snapshots() {
       setDel(null);
       bumpRefresh();
     } catch (e) {
-      pushToast(t("toast.snapDeleteFail", { err: `${e}` }), "error");
+      pushToast(t("toast.snapDeleteFail", { err: errorMessage(e) }), "error");
     }
   }
 
@@ -72,7 +72,7 @@ export default function Snapshots() {
       setCreating(false);
       bumpRefresh();
     } catch (e) {
-      pushToast(t("toast.snapCreateFail", { err: `${e}` }), "error");
+      pushToast(t("toast.snapCreateFail", { err: errorMessage(e) }), "error");
     }
   }
 
@@ -83,7 +83,7 @@ export default function Snapshots() {
       pushToast(t("toast.snapRestored"), "success");
       bumpRefresh();
     } catch (e) {
-      pushToast(t("toast.snapRestoreFail", { err: `${e}` }), "error");
+      pushToast(t("toast.snapRestoreFail", { err: errorMessage(e) }), "error");
     }
   }
 

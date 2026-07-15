@@ -49,34 +49,35 @@
     overflow: hidden;
   }
 
-  /* 细滚动条 */
-  *::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+  :focus-visible {
+    outline: 2px solid rgb(99 102 241);
+    outline-offset: 2px;
   }
-  *::-webkit-scrollbar-thumb {
-    @apply bg-neutral-700 rounded-full;
-    border: 2px solid transparent;
-    background-clip: content-box;
-  }
-  *::-webkit-scrollbar-thumb:hover {
-    @apply bg-neutral-600;
-    background-clip: content-box;
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      scroll-behavior: auto !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
 @layer components {
   .card {
-    @apply rounded-xl border border-neutral-800 bg-neutral-900/60 backdrop-blur;
+    @apply rounded-xl border border-neutral-800 bg-neutral-900;
   }
   .btn {
-    @apply inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-ghost {
-    @apply btn text-neutral-300 hover:bg-neutral-800 hover:text-white;
+    @apply btn text-neutral-300 hover:bg-neutral-800 hover:text-white active:bg-neutral-700;
   }
   .btn-primary {
-    @apply btn bg-brand-600 text-white hover:bg-brand-500;
+    @apply btn bg-brand-600 text-white hover:bg-brand-500 active:bg-brand-700;
   }
 
   /* 彩色徽标：默认深色主题配色（浅色文字 + 半透明底） */

@@ -9,6 +9,9 @@ src-tauri/target
 # editor / os
 .DS_Store
 *.local
+.env
+.env.*
+!.env.example
 .vscode/*
 !.vscode/extensions.json
 

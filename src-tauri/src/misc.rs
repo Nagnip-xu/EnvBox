@@ -1,5 +1,5 @@
 use crate::env_registry;
-use crate::models::HealthReport;
+use crate::models::{HealthReport, ImportPreview};
 use crate::path_manager;
 use crate::win;
 use serde::{Deserialize, Serialize};
@@ -39,7 +39,10 @@ pub fn open_terminal_with(kind: &str, home: &str) -> Result<(), String> {
     let new_path = format!("{};{}", prepend.join(";"), cur_path);
 
     let mut cmd = Command::new("cmd.exe");
-    cmd.args(["/K", &format!("echo [EnvBox] 临时终端: {} @ {} & echo.", kind, home)]);
+    cmd.args([
+        "/K",
+        &format!("echo [EnvBox] 临时终端: {} @ {} & echo.", kind, home),
+    ]);
     cmd.env("PATH", new_path);
     for (k, v) in extra_env {
         cmd.env(k, v);
@@ -64,16 +67,25 @@ pub fn health_check() -> HealthReport {
 
     let mut issues = Vec::new();
     if !invalid.is_empty() {
-        issues.push(format!("发现 {} 个指向不存在目录的无效 PATH 条目", invalid.len()));
+        issues.push(format!(
+            "发现 {} 个指向不存在目录的无效 PATH 条目",
+            invalid.len()
+        ));
     }
     if !dups.is_empty() {
         issues.push(format!("发现 {} 个重复的 PATH 条目", dups.len()));
     }
     if conflicts > 0 {
-        issues.push(format!("有 {} 个变量在系统级与用户级同名（用户级覆盖）", conflicts));
+        issues.push(format!(
+            "有 {} 个变量在系统级与用户级同名（用户级覆盖）",
+            conflicts
+        ));
     }
     if path_len > 2048 {
-        issues.push(format!("PATH 总长度 {} 偏大，注意 Windows 长度限制", path_len));
+        issues.push(format!(
+            "PATH 总长度 {} 偏大，注意 Windows 长度限制",
+            path_len
+        ));
     }
     if issues.is_empty() {
         issues.push("未发现明显问题，环境很健康 ✨".into());
@@ -90,9 +102,68 @@ pub fn health_check() -> HealthReport {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ExportBundle {
+    #[serde(default = "export_version")]
+    version: u32,
     system: BTreeMap<String, String>,
     user: BTreeMap<String, String>,
+}
+
+fn export_version() -> u32 {
+    1
+}
+
+fn parse_import(path: &str) -> Result<ExportBundle, String> {
+    const MAX_IMPORT_BYTES: u64 = 5 * 1024 * 1024;
+    let metadata = std::fs::metadata(path).map_err(|e| format!("无法读取导入文件: {e}"))?;
+    if metadata.len() > MAX_IMPORT_BYTES {
+        return Err("导入文件超过 5 MiB 安全上限".into());
+    }
+    let text = std::fs::read_to_string(path).map_err(|e| format!("无法读取导入文件: {e}"))?;
+    let bundle: ExportBundle =
+        serde_json::from_str(&text).map_err(|e| format!("解析失败: {}", e))?;
+    if bundle.version != 1 {
+        return Err(format!("不支持的导入文件版本: {}", bundle.version));
+    }
+    for (name, value) in bundle.user.iter().chain(bundle.system.iter()) {
+        env_registry::validate_name(name)?;
+        env_registry::validate_value(value)?;
+    }
+    Ok(bundle)
+}
+
+fn is_sensitive_name(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    [
+        "TOKEN",
+        "SECRET",
+        "PASSWORD",
+        "PASSWD",
+        "API_KEY",
+        "API-KEY",
+        "PRIVATE_KEY",
+        "CONNECTION_STRING",
+        "CREDENTIAL",
+    ]
+    .iter()
+    .any(|marker| upper.contains(marker))
+}
+
+pub fn preview_import(path: &str) -> Result<ImportPreview, String> {
+    let bundle = parse_import(path)?;
+    let sensitive_count = bundle
+        .user
+        .keys()
+        .chain(bundle.system.keys())
+        .filter(|name| is_sensitive_name(name))
+        .count();
+    Ok(ImportPreview {
+        user_count: bundle.user.len(),
+        system_count: bundle.system.len(),
+        sensitive_count,
+        requires_elevation: !bundle.system.is_empty() && !win::is_elevated(),
+    })
 }
 
 pub fn export_vars(path: &str) -> Result<(), String> {
@@ -109,7 +180,11 @@ pub fn export_vars(path: &str) -> Result<(), String> {
             _ => {}
         }
     }
-    let bundle = ExportBundle { system, user };
+    let bundle = ExportBundle {
+        version: export_version(),
+        system,
+        user,
+    };
 
     if Path::new(path)
         .extension()
@@ -130,21 +205,35 @@ pub fn export_vars(path: &str) -> Result<(), String> {
 
 /// 从 JSON 导入变量（写入用户作用域；系统作用域需已提权），返回导入条数
 pub fn import_vars(path: &str) -> Result<usize, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let bundle: ExportBundle = serde_json::from_str(&text).map_err(|e| format!("解析失败: {}", e))?;
+    let bundle = parse_import(path)?;
+    if !bundle.system.is_empty() && !win::is_elevated() {
+        return Err("导入文件包含系统变量，请先以管理员身份运行后再导入".into());
+    }
     let mut count = 0;
     for (k, v) in &bundle.user {
-        if env_registry::set_env_var("user", k, v).is_ok() {
-            count += 1;
-        }
+        env_registry::set_env_var("user", k, v)
+            .map_err(|e| format!("导入用户变量 {k} 失败: {e}"))?;
+        count += 1;
     }
-    if win::is_elevated() {
-        for (k, v) in &bundle.system {
-            if env_registry::set_env_var("system", k, v).is_ok() {
-                count += 1;
-            }
-        }
+    for (k, v) in &bundle.system {
+        env_registry::set_env_var("system", k, v)
+            .map_err(|e| format!("导入系统变量 {k} 失败: {e}"))?;
+        count += 1;
     }
     win::broadcast_env_change();
+    crate::snapshot::audit("import", &format!("导入 {count} 个环境变量"));
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_common_sensitive_variable_names() {
+        assert!(is_sensitive_name("GITHUB_TOKEN"));
+        assert!(is_sensitive_name("database_password"));
+        assert!(is_sensitive_name("MY_API_KEY"));
+        assert!(!is_sensitive_name("JAVA_HOME"));
+    }
 }

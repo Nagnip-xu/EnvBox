@@ -105,7 +105,10 @@ pub fn run_elevated_wait(program: &str, params: &str) -> Result<u32, String> {
     use winapi::um::winbase::INFINITE;
 
     let to_w = |s: &str| -> Vec<u16> {
-        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+        OsStr::new(s)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
     };
     let verb = to_w("runas");
     let file = to_w(program);

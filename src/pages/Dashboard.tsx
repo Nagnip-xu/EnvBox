@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Trash2, AlertTriangle } from "lucide-react";
+import { Pencil, Trash2, AlertTriangle, Eye, EyeOff } from "lucide-react";
 import type { EnvVar, EnvScope } from "../types";
-import { api } from "../lib/tauri";
+import { api, errorMessage } from "../lib/tauri";
 import { useStore } from "../store/useStore";
 import Modal from "../components/Modal";
 import ConfirmModal from "../components/ConfirmModal";
@@ -11,6 +11,9 @@ const SCOPE_KEY: Record<EnvScope, string> = {
   user: "scope.user",
   process: "scope.process",
 };
+
+const SENSITIVE_NAME =
+  /(TOKEN|SECRET|PASSWORD|PASSWD|API[_-]?KEY|PRIVATE[_-]?KEY|CONNECTION[_-]?STRING|CREDENTIAL)/i;
 
 interface EditState {
   scope: "system" | "user";
@@ -56,7 +59,7 @@ export default function Dashboard() {
       setEdit(null);
       bumpRefresh();
     } catch (e) {
-      pushToast(t("toast.saveFail", { err: `${e}` }), "error");
+      pushToast(t("toast.saveFail", { err: errorMessage(e) }), "error");
     }
   }
 
@@ -68,7 +71,7 @@ export default function Dashboard() {
       setDel(null);
       bumpRefresh();
     } catch (e) {
-      pushToast(t("toast.deleteFail", { err: `${e}` }), "error");
+      pushToast(t("toast.deleteFail", { err: errorMessage(e) }), "error");
     }
   }
 
@@ -135,8 +138,11 @@ export default function Dashboard() {
               </div>
             </div>
             <div>
-              <label className="mb-1 block text-xs text-neutral-400">{t("dash.nameLabel")}</label>
+              <label htmlFor="env-var-name" className="mb-1 block text-xs text-neutral-400">
+                {t("dash.nameLabel")}
+              </label>
               <input
+                id="env-var-name"
                 value={edit.name}
                 disabled={!edit.isNew}
                 onChange={(e) => setEdit({ ...edit, name: e.target.value })}
@@ -145,8 +151,11 @@ export default function Dashboard() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-neutral-400">{t("dash.valueLabel")}</label>
+              <label htmlFor="env-var-value" className="mb-1 block text-xs text-neutral-400">
+                {t("dash.valueLabel")}
+              </label>
               <textarea
+                id="env-var-value"
                 value={edit.value}
                 onChange={(e) => setEdit({ ...edit, value: e.target.value })}
                 rows={3}
@@ -193,10 +202,32 @@ function VarRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const sensitive = SENSITIVE_NAME.test(v.name);
+  const [revealed, setRevealed] = useState(false);
   return (
     <div className="group flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/40">
       <div className="w-52 shrink-0 truncate font-mono text-sm text-brand-300">{v.name}</div>
-      <div className="min-w-0 flex-1 truncate font-mono text-sm text-neutral-400">{v.value}</div>
+      <div
+        className="min-w-0 flex-1 truncate font-mono text-sm text-neutral-400"
+        title={sensitive && !revealed ? undefined : v.value}
+      >
+        {sensitive && !revealed ? "••••••••••••" : v.value}
+      </div>
+      {sensitive && (
+        <button
+          className="btn-ghost !px-2"
+          title={revealed ? t("common.hideSecret") : t("common.revealSecret")}
+          aria-label={revealed ? t("common.hideSecret") : t("common.revealSecret")}
+          aria-pressed={revealed}
+          onClick={() => setRevealed((value) => !value)}
+        >
+          {revealed ? (
+            <EyeOff size={15} aria-hidden="true" />
+          ) : (
+            <Eye size={15} aria-hidden="true" />
+          )}
+        </button>
+      )}
       {v.conflictsWith && (
         <span className="tag tag-amber" title={t("dash.conflictTip")}>
           <AlertTriangle size={12} /> {t("dash.conflict")}
@@ -207,7 +238,7 @@ function VarRow({
           {t("dash.hasVar")}
         </span>
       )}
-      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="flex items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
         <button className="btn-ghost !px-2" title={t("common.edit")} aria-label={t("common.edit")} onClick={onEdit}>
           <Pencil size={15} />
         </button>

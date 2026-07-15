@@ -20,7 +20,7 @@ const NAV: { id: PageId; key: string; icon: LucideIcon }[] = [
 export default function Sidebar() {
   const { page, setPage, t } = useStore();
   return (
-    <aside className="flex w-52 flex-col border-r border-neutral-800 bg-neutral-900/40">
+    <aside className="flex w-52 shrink-0 flex-col border-r border-neutral-800 bg-neutral-900/70">
       <div className="flex items-center gap-2 px-5 py-5">
         <img src="/app-icon.png" alt="EnvBox" className="h-8 w-8 rounded-lg" />
         <span className="text-lg font-semibold tracking-tight">EnvBox</span>
@@ -33,13 +33,14 @@ export default function Sidebar() {
             <button
               key={id}
               onClick={() => setPage(id)}
+              aria-current={active ? "page" : undefined}
               className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 active
                   ? "bg-brand-600/15 text-brand-300"
                   : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
               }`}
             >
-              <Icon size={18} />
+              <Icon size={18} aria-hidden="true" />
               {t(key)}
             </button>
           );

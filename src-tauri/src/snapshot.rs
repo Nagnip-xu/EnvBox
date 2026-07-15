@@ -34,6 +34,18 @@ fn scope_map(scope: &str) -> BTreeMap<String, String> {
         .collect()
 }
 
+fn validate_snapshot_id(id: &str) -> Result<(), String> {
+    if id.is_empty()
+        || id.len() > 64
+        || !id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err("无效的快照 ID".into());
+    }
+    Ok(())
+}
+
 pub fn create_snapshot(description: &str) -> Result<Snapshot, String> {
     let id = win::timestamp_id();
     let created_at = win::now_string();
@@ -77,6 +89,7 @@ pub fn list_snapshots() -> Vec<Snapshot> {
 }
 
 pub fn delete_snapshot(id: &str) -> Result<(), String> {
+    validate_snapshot_id(id)?;
     let file = snap_dir().join(format!("{}.json", id));
     std::fs::remove_file(&file).map_err(|e| format!("删除快照失败: {}", e))?;
     audit("snapshot_delete", id);
@@ -89,8 +102,8 @@ pub fn prune_snapshots(days: u64) -> usize {
     if days == 0 {
         return 0;
     }
-    let cutoff = std::time::SystemTime::now()
-        .checked_sub(std::time::Duration::from_secs(days * 86400));
+    let cutoff =
+        std::time::SystemTime::now().checked_sub(std::time::Duration::from_secs(days * 86400));
     let cutoff = match cutoff {
         Some(c) => c,
         None => return 0,
@@ -111,36 +124,53 @@ pub fn prune_snapshots(days: u64) -> usize {
         }
     }
     if removed > 0 {
-        audit("snapshot_prune", &format!("清理 {} 个超过 {} 天的快照", removed, days));
+        audit(
+            "snapshot_prune",
+            &format!("清理 {} 个超过 {} 天的快照", removed, days),
+        );
     }
     removed
 }
 
 pub fn restore_snapshot(id: &str) -> Result<(), String> {
+    validate_snapshot_id(id)?;
+    // 恢复本身也可能需要撤销，因此先强制保存当前状态。
+    create_snapshot(&format!("恢复快照 {id} 前"))
+        .map_err(|e| format!("恢复前安全快照创建失败，操作已取消: {e}"))?;
     let file = snap_dir().join(format!("{}.json", id));
     let text = std::fs::read_to_string(&file).map_err(|e| format!("找不到快照: {}", e))?;
     let full: SnapshotFull = serde_json::from_str(&text).map_err(|e| e.to_string())?;
 
+    let current_sys = scope_map("system");
+    if current_sys != full.system && !win::is_elevated() {
+        return Err(
+            "该快照包含系统变量差异，请先以管理员身份运行后再恢复；尚未修改任何变量".into(),
+        );
+    }
+
     // 恢复用户变量：写入快照中的所有值，删除快照中不存在的多余变量
     let current_user = scope_map("user");
     for (k, v) in &full.user {
-        let _ = env_registry::set_env_var("user", k, v);
+        env_registry::set_env_var("user", k, v)
+            .map_err(|e| format!("恢复用户变量 {k} 失败: {e}"))?;
     }
     for k in current_user.keys() {
         if !full.user.contains_key(k) {
-            let _ = env_registry::delete_env_var("user", k);
+            env_registry::delete_env_var("user", k)
+                .map_err(|e| format!("删除用户变量 {k} 失败: {e}"))?;
         }
     }
 
     // 系统变量仅在已提权时恢复
     if win::is_elevated() {
-        let current_sys = scope_map("system");
         for (k, v) in &full.system {
-            let _ = env_registry::set_env_var("system", k, v);
+            env_registry::set_env_var("system", k, v)
+                .map_err(|e| format!("恢复系统变量 {k} 失败: {e}"))?;
         }
         for k in current_sys.keys() {
             if !full.system.contains_key(k) {
-                let _ = env_registry::delete_env_var("system", k);
+                env_registry::delete_env_var("system", k)
+                    .map_err(|e| format!("删除系统变量 {k} 失败: {e}"))?;
             }
         }
     }
@@ -183,4 +213,16 @@ pub fn list_audit() -> Vec<AuditEntry> {
     out.reverse();
     out.truncate(200);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_id_cannot_escape_data_directory() {
+        assert!(validate_snapshot_id("snap-123456").is_ok());
+        assert!(validate_snapshot_id("../audit").is_err());
+        assert!(validate_snapshot_id("C:\\temp").is_err());
+    }
 }

@@ -1,9 +1,48 @@
 use crate::models::EnvVar;
 use std::collections::HashMap;
 
+const MAX_ENV_NAME_LEN: usize = 255;
+const MAX_ENV_VALUE_LEN: usize = 32_767;
+
+pub fn validate_scope(scope: &str) -> Result<(), String> {
+    match scope {
+        "user" | "system" => Ok(()),
+        _ => Err(format!("不支持的环境变量作用域: {scope}")),
+    }
+}
+
+pub fn validate_name(name: &str) -> Result<(), String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("环境变量名不能为空".into());
+    }
+    if trimmed.len() > MAX_ENV_NAME_LEN {
+        return Err(format!("环境变量名不能超过 {MAX_ENV_NAME_LEN} 个字节"));
+    }
+    if trimmed != name
+        || name.contains('=')
+        || name.contains('\0')
+        || name.chars().any(char::is_control)
+    {
+        return Err("环境变量名不能包含首尾空格、等号、NUL 或控制字符".into());
+    }
+    Ok(())
+}
+
+pub fn validate_value(value: &str) -> Result<(), String> {
+    if value.contains('\0') {
+        return Err("环境变量值不能包含 NUL 字符".into());
+    }
+    if value.encode_utf16().count() > MAX_ENV_VALUE_LEN {
+        return Err(format!(
+            "环境变量值超过 Windows 上限（{MAX_ENV_VALUE_LEN} 个 UTF-16 字符）"
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(windows)]
-const SYSTEM_SUBKEY: &str =
-    r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
+const SYSTEM_SUBKEY: &str = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
 #[cfg(windows)]
 const USER_SUBKEY: &str = "Environment";
 
@@ -59,7 +98,7 @@ pub fn list_env_vars() -> Vec<EnvVar> {
     let mut out = Vec::new();
 
     let mut sys_sorted: Vec<_> = system.iter().collect();
-    sys_sorted.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    sys_sorted.sort_by_key(|a| a.0.to_lowercase());
     for (name, (value, expandable)) in sys_sorted {
         let conflicts = if user.keys().any(|k| k.eq_ignore_ascii_case(name)) {
             Some("user".to_string())
@@ -76,7 +115,7 @@ pub fn list_env_vars() -> Vec<EnvVar> {
     }
 
     let mut user_sorted: Vec<_> = user.iter().collect();
-    user_sorted.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    user_sorted.sort_by_key(|a| a.0.to_lowercase());
     for (name, (value, expandable)) in user_sorted {
         let conflicts = if system.keys().any(|k| k.eq_ignore_ascii_case(name)) {
             Some("system".to_string())
@@ -123,9 +162,13 @@ pub fn set_env_var(scope: &str, name: &str, value: &str) -> Result<(), String> {
     use winreg::enums::*;
     use winreg::{RegKey, RegValue};
 
+    validate_scope(scope)?;
+    validate_name(name)?;
+    validate_value(value)?;
     let (root, sub) = match scope {
         "system" => (RegKey::predef(HKEY_LOCAL_MACHINE), SYSTEM_SUBKEY),
-        _ => (RegKey::predef(HKEY_CURRENT_USER), USER_SUBKEY),
+        "user" => (RegKey::predef(HKEY_CURRENT_USER), USER_SUBKEY),
+        _ => unreachable!("scope validated above"),
     };
     let key = root
         .open_subkey_with_flags(sub, KEY_SET_VALUE)
@@ -155,9 +198,12 @@ pub fn delete_env_var(scope: &str, name: &str) -> Result<(), String> {
     use winreg::enums::*;
     use winreg::RegKey;
 
+    validate_scope(scope)?;
+    validate_name(name)?;
     let (root, sub) = match scope {
         "system" => (RegKey::predef(HKEY_LOCAL_MACHINE), SYSTEM_SUBKEY),
-        _ => (RegKey::predef(HKEY_CURRENT_USER), USER_SUBKEY),
+        "user" => (RegKey::predef(HKEY_CURRENT_USER), USER_SUBKEY),
+        _ => unreachable!("scope validated above"),
     };
     let key = root
         .open_subkey_with_flags(sub, KEY_SET_VALUE)
@@ -170,4 +216,32 @@ pub fn delete_env_var(scope: &str, name: &str) -> Result<(), String> {
 #[cfg(not(windows))]
 pub fn delete_env_var(_scope: &str, _name: &str) -> Result<(), String> {
     Err("仅支持 Windows".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_unknown_scope() {
+        assert!(validate_scope("process").is_err());
+        assert!(validate_scope("unexpected").is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_variable_names() {
+        for name in ["", " NAME", "NAME ", "A=B", "A\0B", "A\nB"] {
+            assert!(
+                validate_name(name).is_err(),
+                "accepted invalid name: {name:?}"
+            );
+        }
+        assert!(validate_name("JAVA_HOME").is_ok());
+    }
+
+    #[test]
+    fn rejects_nul_in_value() {
+        assert!(validate_value("hello\0world").is_err());
+        assert!(validate_value("%JAVA_HOME%\\bin").is_ok());
+    }
 }

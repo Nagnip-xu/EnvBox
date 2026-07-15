@@ -4,6 +4,29 @@ use crate::win;
 use std::collections::HashSet;
 use std::path::Path;
 
+const MAX_PATH_VALUE_LEN: usize = 32_767;
+
+pub fn validate_path_entries(scope: &str, entries: &[String]) -> Result<(), String> {
+    env_registry::validate_scope(scope)?;
+    for entry in entries {
+        if entry.contains('\0') || entry.contains(';') || entry.chars().any(|c| c.is_control()) {
+            return Err(format!("PATH 条目包含非法字符: {entry}"));
+        }
+    }
+    let total = entries
+        .iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.encode_utf16().count() + 1)
+        .sum::<usize>();
+    if total > MAX_PATH_VALUE_LEN {
+        return Err(format!(
+            "PATH 总长度超过 Windows 上限（{MAX_PATH_VALUE_LEN} 个 UTF-16 字符）"
+        ));
+    }
+    Ok(())
+}
+
 fn sdk_tag_for(dir: &str) -> Option<String> {
     let p = Path::new(dir);
     let has = |exe: &str| p.join(exe).exists();
@@ -59,6 +82,7 @@ pub fn get_path_entries() -> Vec<PathEntry> {
 
 /// 用给定的原始条目列表覆盖某作用域的 PATH，并广播。
 pub fn save_path(scope: &str, entries: Vec<String>) -> Result<(), String> {
+    validate_path_entries(scope, &entries)?;
     let cleaned: Vec<String> = entries
         .into_iter()
         .map(|s| s.trim().to_string())
@@ -72,13 +96,15 @@ pub fn save_path(scope: &str, entries: Vec<String>) -> Result<(), String> {
 
 /// 删除某作用域中所有指向不存在目录的条目，返回删除数量。
 pub fn clean_invalid(scope: &str) -> Result<usize, String> {
+    env_registry::validate_scope(scope)?;
     let vars = env_registry::all_vars_map();
     let before = raw_path_of(scope);
     let after: Vec<String> = before
         .iter()
         .filter(|raw| {
             let resolved = win::expand_vars(raw, &vars);
-            Path::new(&resolved).is_dir()
+            // 未解析变量、UNC/网络位置可能只是暂时不可访问，不自动删除。
+            resolved.contains('%') || resolved.starts_with("\\\\") || Path::new(&resolved).is_dir()
         })
         .cloned()
         .collect();
@@ -97,7 +123,10 @@ pub fn dedupe_by_resolved_key(
     let mut seen: HashSet<String> = HashSet::new();
     let mut after = Vec::new();
     for raw in before {
-        let key = resolve(raw).to_lowercase().trim_end_matches('\\').to_string();
+        let key = resolve(raw)
+            .to_lowercase()
+            .trim_end_matches('\\')
+            .to_string();
         if seen.insert(key) {
             after.push(raw.clone());
         }
@@ -108,6 +137,7 @@ pub fn dedupe_by_resolved_key(
 
 /// 去除某作用域中重复条目（保留首次出现），返回删除数量。
 pub fn dedupe(scope: &str) -> Result<usize, String> {
+    env_registry::validate_scope(scope)?;
     let vars = env_registry::all_vars_map();
     let before = raw_path_of(scope);
     let (after, removed) = dedupe_by_resolved_key(&before, |raw| win::expand_vars(raw, &vars));
@@ -147,5 +177,12 @@ mod tests {
         let (after, removed) = dedupe_by_resolved_key(&before, |s| s.to_string());
         assert_eq!(removed, 1);
         assert_eq!(after.len(), 1);
+    }
+
+    #[test]
+    fn validates_path_entries() {
+        assert!(validate_path_entries("user", &["C:\\Tools\\bin".into()]).is_ok());
+        assert!(validate_path_entries("process", &[]).is_err());
+        assert!(validate_path_entries("user", &["C:\\A;C:\\B".into()]).is_err());
     }
 }

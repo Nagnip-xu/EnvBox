@@ -11,6 +11,10 @@ mod win;
 use models::*;
 use tauri::AppHandle;
 
+fn require_snapshot(description: &str) -> Result<Snapshot, String> {
+    snapshot::create_snapshot(description).map_err(|e| format!("安全快照创建失败，操作已取消: {e}"))
+}
+
 // ── 变量读写 ──────────────────────────────────────────────
 #[tauri::command]
 fn list_env_vars() -> Vec<EnvVar> {
@@ -19,7 +23,7 @@ fn list_env_vars() -> Vec<EnvVar> {
 
 #[tauri::command]
 fn set_env_var(scope: String, name: String, value: String) -> Result<(), String> {
-    snapshot::create_snapshot(&format!("修改 {} 变量 {} 前", scope, name)).ok();
+    require_snapshot(&format!("修改 {} 变量 {} 前", scope, name))?;
     env_registry::set_env_var(&scope, &name, &value)?;
     win::broadcast_env_change();
     Ok(())
@@ -27,7 +31,7 @@ fn set_env_var(scope: String, name: String, value: String) -> Result<(), String>
 
 #[tauri::command]
 fn delete_env_var(scope: String, name: String) -> Result<(), String> {
-    snapshot::create_snapshot(&format!("删除 {} 变量 {} 前", scope, name)).ok();
+    require_snapshot(&format!("删除 {} 变量 {} 前", scope, name))?;
     env_registry::delete_env_var(&scope, &name)?;
     win::broadcast_env_change();
     Ok(())
@@ -41,19 +45,19 @@ fn get_path_entries() -> Vec<PathEntry> {
 
 #[tauri::command]
 fn save_path(scope: String, entries: Vec<String>) -> Result<(), String> {
-    snapshot::create_snapshot(&format!("保存 {} PATH 前", scope)).ok();
+    require_snapshot(&format!("保存 {} PATH 前", scope))?;
     path_manager::save_path(&scope, entries)
 }
 
 #[tauri::command]
 fn clean_invalid_path(scope: String) -> Result<usize, String> {
-    snapshot::create_snapshot(&format!("清理 {} 无效 PATH 前", scope)).ok();
+    require_snapshot(&format!("清理 {} 无效 PATH 前", scope))?;
     path_manager::clean_invalid(&scope)
 }
 
 #[tauri::command]
 fn dedupe_path(scope: String) -> Result<usize, String> {
-    snapshot::create_snapshot(&format!("PATH 去重 {} 前", scope)).ok();
+    require_snapshot(&format!("PATH 去重 {} 前", scope))?;
     path_manager::dedupe(&scope)
 }
 
@@ -72,7 +76,7 @@ async fn scan_sdks() -> Vec<SdkVersion> {
 
 #[tauri::command]
 fn switch_sdk(kind: String, home: String) -> Result<String, String> {
-    snapshot::create_snapshot(&format!("切换 {} 到 {} 前", kind, home)).ok();
+    require_snapshot(&format!("切换 {} 到 {} 前", kind, home))?;
     sdk_scanner::switch_sdk(&kind, &home)
 }
 
@@ -96,12 +100,13 @@ fn install_sdk(
     engine: String,
     location: String,
 ) -> Result<String, String> {
+    require_snapshot(&format!("安装 {} {} {} 前", kind, distro, version))?;
     installer::install_sdk(app, &kind, &distro, &version, &engine, &location)
 }
 
 #[tauri::command]
 fn uninstall_sdk(app: AppHandle, kind: String, home: String) -> Result<String, String> {
-    snapshot::create_snapshot(&format!("卸载 {} ({}) 前", kind, home)).ok();
+    require_snapshot(&format!("卸载 {} ({}) 前", kind, home))?;
     installer::uninstall_sdk(app, &kind, &home)
 }
 
@@ -154,7 +159,13 @@ fn export_vars(path: String) -> Result<(), String> {
 
 #[tauri::command]
 fn import_vars(path: String) -> Result<usize, String> {
+    require_snapshot("导入环境变量前")?;
     misc::import_vars(&path)
+}
+
+#[tauri::command]
+fn preview_import(path: String) -> Result<ImportPreview, String> {
+    misc::preview_import(&path)
 }
 
 #[tauri::command]
@@ -206,6 +217,7 @@ pub fn run() {
             open_terminal_with,
             health_check,
             export_vars,
+            preview_import,
             import_vars,
             is_elevated,
             relaunch_as_admin

@@ -10,7 +10,7 @@ import {
   GripVertical,
 } from "lucide-react";
 import type { PathEntry } from "../types";
-import { api } from "../lib/tauri";
+import { api, errorMessage } from "../lib/tauri";
 import { useStore } from "../store/useStore";
 import ConfirmModal from "../components/ConfirmModal";
 
@@ -56,7 +56,7 @@ export default function PathManager() {
       try {
         total += await fn(scope);
       } catch (e) {
-        errs.push(`${scope}: ${e}`);
+        errs.push(`${scope}: ${errorMessage(e)}`);
       }
     }
     if (total > 0) pushToast(t("path.toast.done", { label, n: total }), "success");
@@ -80,12 +80,12 @@ export default function PathManager() {
     try {
       await api.relaunchAsAdmin();
     } catch (e) {
-      pushToast(t("toast.relaunchFail", { err: `${e}` }), "error");
+      pushToast(t("toast.relaunchFail", { err: errorMessage(e) }), "error");
     }
   }
 
   function reportScopeErr(scope: string, e: unknown, prefix: string) {
-    const msg = `${e}`;
+    const msg = errorMessage(e);
     if (scope === "system" && isPermErr(msg)) {
       pushToast(t("path.sysPermErr"), "error", {
         label: t("settings.perm.relaunch"),

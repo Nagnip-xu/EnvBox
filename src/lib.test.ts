@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { translate, LANGS } from "./i18n";
 import { resolveTheme, applyTheme } from "./theme";
+import { errorMessage } from "./lib/tauri";
 
 describe("i18n", () => {
   it("returns zh translation by default key", () => {
@@ -40,5 +41,12 @@ describe("sdkCache", () => {
     const mod = await import("./store/sdkCache");
     expect(mod.getCachedSdks()).toBeNull();
     expect(mod.isSdkScanning()).toBe(false);
+  });
+});
+
+describe("tauri error formatting", () => {
+  it("normalizes strings and Error objects", () => {
+    expect(errorMessage("permission denied")).toBe("permission denied");
+    expect(errorMessage(new Error("snapshot failed"))).toBe("snapshot failed");
   });
 });

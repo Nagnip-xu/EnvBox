@@ -2,7 +2,7 @@ import { CheckCircle2, XCircle, Info, X } from "lucide-react";
 import { useStore } from "../store/useStore";
 
 export default function Toaster() {
-  const { toasts, removeToast } = useStore();
+  const { toasts, removeToast, t: translate } = useStore();
   return (
     <div
       aria-live="polite"
@@ -21,6 +21,7 @@ export default function Toaster() {
         return (
           <div
             key={t.id}
+            role={t.type === "error" ? "alert" : "status"}
             className="pointer-events-auto flex w-80 items-start gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 shadow-xl"
           >
             <Icon size={18} className={`mt-0.5 shrink-0 ${color}`} />
@@ -40,7 +41,8 @@ export default function Toaster() {
             </div>
             <button
               onClick={() => removeToast(t.id)}
-              className="text-neutral-500 hover:text-neutral-200"
+              aria-label={translate("common.close")}
+              className="rounded p-0.5 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-200"
             >
               <X size={15} />
             </button>

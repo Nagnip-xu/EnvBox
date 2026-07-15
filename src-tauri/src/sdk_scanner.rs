@@ -268,7 +268,9 @@ fn candidate_roots(kind: &str) -> Vec<PathBuf> {
                         p.file_name()
                             .map(|n| {
                                 let n = n.to_string_lossy().to_lowercase();
-                                n.starts_with("jdk") || n.starts_with("java") || n.starts_with("openjdk")
+                                n.starts_with("jdk")
+                                    || n.starts_with("java")
+                                    || n.starts_with("openjdk")
                             })
                             .unwrap_or(false)
                     }));
@@ -434,7 +436,8 @@ pub fn scan_kind(kind: &str) -> Vec<SdkVersion> {
     let current =
         current_home_from_path(&spec).map(|s| s.to_lowercase().trim_end_matches('\\').to_string());
     let home_var_val = spec.home_var.and_then(|v| {
-        env_registry::get_scope_value("user", v).or_else(|| env_registry::get_scope_value("system", v))
+        env_registry::get_scope_value("user", v)
+            .or_else(|| env_registry::get_scope_value("system", v))
     });
 
     let mut out: Vec<SdkVersion> = Vec::new();
@@ -511,7 +514,10 @@ fn detect_switch_conflicts(spec: &KindSpec, home: &str) -> String {
         for raw in sp.split(';').map(|s| s.trim()).filter(|s| !s.is_empty()) {
             let is_var_ref = spec
                 .home_var
-                .map(|v| raw.to_uppercase().contains(&format!("%{}%", v.to_uppercase())))
+                .map(|v| {
+                    raw.to_uppercase()
+                        .contains(&format!("%{}%", v.to_uppercase()))
+                })
                 .unwrap_or(false);
             if is_var_ref {
                 continue;
@@ -534,12 +540,19 @@ fn detect_switch_conflicts(spec: &KindSpec, home: &str) -> String {
 pub fn switch_sdk(kind: &str, home: &str) -> Result<String, String> {
     let spec = kind_spec(kind).ok_or_else(|| format!("不支持的类型: {}", kind))?;
     let home_path = Path::new(home);
-    if !home_path.exists() {
+    if !home_path.is_absolute() || !home_path.is_dir() {
         return Err(format!("目录不存在: {}", home));
+    }
+    if home_has_exe(&spec, home_path).is_none() {
+        return Err(format!("目录中未找到 {}，已取消切换", spec.exe));
     }
 
     let home_trim = home.trim_end_matches('\\');
     let mut new_front: Vec<String> = Vec::new();
+    let old_home = spec
+        .home_var
+        .and_then(|var| env_registry::get_scope_value("user", var));
+    let old_path = env_registry::get_scope_value("user", "Path").unwrap_or_default();
 
     if let Some(var) = spec.home_var {
         env_registry::set_env_var("user", var, home)?;
@@ -567,7 +580,32 @@ pub fn switch_sdk(kind: &str, home: &str) -> Result<String, String> {
             combined.push(r);
         }
     }
-    env_registry::set_env_var("user", "Path", &combined.join(";"))?;
+    if let Err(error) = env_registry::set_env_var("user", "Path", &combined.join(";")) {
+        let mut rollback_errors = Vec::new();
+        if let Some(var) = spec.home_var {
+            match old_home {
+                Some(value) => {
+                    if let Err(e) = env_registry::set_env_var("user", var, &value) {
+                        rollback_errors.push(format!("恢复 {var} 失败: {e}"));
+                    }
+                }
+                None => {
+                    if let Err(e) = env_registry::delete_env_var("user", var) {
+                        rollback_errors.push(format!("删除新建的 {var} 失败: {e}"));
+                    }
+                }
+            }
+        }
+        if let Err(e) = env_registry::set_env_var("user", "Path", &old_path) {
+            rollback_errors.push(format!("恢复 PATH 失败: {e}"));
+        }
+        let rollback = if rollback_errors.is_empty() {
+            "原设置已恢复".to_string()
+        } else {
+            format!("回滚不完整：{}", rollback_errors.join("；"))
+        };
+        return Err(format!("写入 PATH 失败（{error}）；{rollback}"));
+    }
     win::broadcast_env_change();
     Ok(detect_switch_conflicts(&spec, home))
 }

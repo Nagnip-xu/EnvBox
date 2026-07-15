@@ -16,7 +16,7 @@ import {
   Keyboard,
 } from "lucide-react";
 import type { EngineStatus, HealthReport } from "../types";
-import { api, pickDirectory } from "../lib/tauri";
+import { api, errorMessage, pickDirectory } from "../lib/tauri";
 import { useStore } from "../store/useStore";
 import { LANGS, type Lang } from "../i18n";
 import type { ThemeMode } from "../theme";
@@ -49,7 +49,7 @@ export default function Settings() {
       const ok = await api.relaunchAsAdmin();
       if (ok) pushToast(t("toast.relaunching"), "info");
     } catch (e) {
-      pushToast(t("toast.relaunchFail", { err: `${e}` }), "error");
+      pushToast(t("toast.relaunchFail", { err: errorMessage(e) }), "error");
     }
   }
 

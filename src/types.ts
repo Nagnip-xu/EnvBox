@@ -85,3 +85,10 @@ export interface EngineStatus {
   scoop: boolean;
   elevated: boolean;
 }
+
+export interface ImportPreview {
+  userCount: number;
+  systemCount: number;
+  sensitiveCount: number;
+  requiresElevation: boolean;
+}
