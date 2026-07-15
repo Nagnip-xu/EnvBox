@@ -6,12 +6,14 @@ import type {
   InstallableVersion,
   ImportPreview,
   JobProgress,
+  ManagedInstall,
   PathEntry,
   ProjectInspection,
   SdkKind,
   SdkVersion,
   Snapshot,
   SnapshotPreview,
+  SnapshotSelection,
 } from "../types";
 import { mockEnvVars, mockPathEntries, mockSdks, mockSnapshots } from "./mock";
 
@@ -70,6 +72,9 @@ export const api = {
       ? invoke("engine_status")
       : { winget: true, scoop: false, elevated: false };
   },
+  async listManagedInstalls(): Promise<ManagedInstall[]> {
+    return isTauri() ? invoke("list_managed_installs") : [];
+  },
   async isElevated(): Promise<boolean> {
     return isTauri() ? invoke("is_elevated") : false;
   },
@@ -84,6 +89,10 @@ export const api = {
         duplicatePaths: 1,
         conflicts: 1,
         pathLength: 480,
+        unresolvedPaths: 1,
+        networkPaths: 0,
+        snapshotIssues: 0,
+        incompleteInstalls: 0,
         issues: ["浏览器预览：这是演示数据"],
       };
     return invoke("health_check");
@@ -93,8 +102,8 @@ export const api = {
       return {
         path,
         hints: [
-          { tool: "Node.js", version: "22", source: ".nvmrc" },
-          { tool: "Python", version: "3.12", source: ".python-version" },
+          { tool: "Node.js", version: "22", source: ".nvmrc", status: "installed" },
+          { tool: "Python", version: "3.12", source: ".python-version", status: "missing" },
         ],
       };
     }
@@ -140,6 +149,10 @@ export const api = {
     if (!isTauri()) throw new PreviewError();
     return invoke("uninstall_sdk", { kind, home });
   },
+  async cancelJob(jobId: string): Promise<boolean> {
+    if (!isTauri()) return false;
+    return invoke("cancel_job", { jobId });
+  },
   async createSnapshot(description: string): Promise<Snapshot> {
     if (!isTauri()) throw new PreviewError();
     return invoke("create_snapshot", { description });
@@ -147,6 +160,10 @@ export const api = {
   async restoreSnapshot(id: string): Promise<void> {
     if (!isTauri()) throw new PreviewError();
     return invoke("restore_snapshot", { id });
+  },
+  async restoreSnapshotSelected(id: string, selections: SnapshotSelection[]): Promise<void> {
+    if (!isTauri()) throw new PreviewError();
+    return invoke("restore_snapshot_selected", { id, selections });
   },
   async deleteSnapshot(id: string): Promise<void> {
     if (!isTauri()) throw new PreviewError();
@@ -174,9 +191,19 @@ export const api = {
   },
   async previewImport(path: string): Promise<ImportPreview> {
     if (!isTauri()) {
-      return { userCount: 0, systemCount: 0, sensitiveCount: 0, requiresElevation: false };
+      return {
+        userCount: 0,
+        systemCount: 0,
+        sensitiveCount: 0,
+        requiresElevation: false,
+        changes: [],
+      };
     }
     return invoke("preview_import", { path });
+  },
+  async importVarsSelected(path: string, selections: SnapshotSelection[]): Promise<number> {
+    if (!isTauri()) throw new PreviewError();
+    return invoke("import_vars_selected", { path, selections });
   },
 };
 

@@ -1,9 +1,11 @@
 use crate::env_registry;
-use crate::models::{HealthReport, ImportPreview, ProjectInspection, ProjectVersionHint};
+use crate::models::{
+    HealthReport, ImportPreview, ProjectInspection, ProjectVersionHint, SnapshotSelection,
+};
 use crate::path_manager;
 use crate::win;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::process::Command;
 
@@ -39,6 +41,9 @@ pub fn inspect_project(path: &str) -> Result<ProjectInspection, String> {
                     tool: tool.into(),
                     version: version.into(),
                     source: file.into(),
+                    status: String::new(),
+                    installed_home: None,
+                    current_version: None,
                 });
             }
         }
@@ -56,6 +61,9 @@ pub fn inspect_project(path: &str) -> Result<ProjectInspection, String> {
                     tool: tool.into(),
                     version: version.into(),
                     source: ".tool-versions".into(),
+                    status: String::new(),
+                    installed_home: None,
+                    current_version: None,
                 });
             }
         }
@@ -71,6 +79,9 @@ pub fn inspect_project(path: &str) -> Result<ProjectInspection, String> {
                     tool: ".NET SDK".into(),
                     version: version.into(),
                     source: "global.json".into(),
+                    status: String::new(),
+                    installed_home: None,
+                    current_version: None,
                 });
             }
         }
@@ -91,6 +102,9 @@ pub fn inspect_project(path: &str) -> Result<ProjectInspection, String> {
                 tool: "Gradle".into(),
                 version: version.into(),
                 source: "gradle-wrapper.properties".into(),
+                status: "wrapper".into(),
+                installed_home: None,
+                current_version: None,
             });
         }
     }
@@ -100,7 +114,63 @@ pub fn inspect_project(path: &str) -> Result<ProjectInspection, String> {
             tool: "Maven".into(),
             version: "Wrapper".into(),
             source: "mvnw".into(),
+            status: "wrapper".into(),
+            installed_home: None,
+            current_version: None,
         });
+    }
+
+    let mut sdk_cache = HashMap::new();
+    for hint in &mut hints {
+        if hint.status == "wrapper" {
+            continue;
+        }
+        let tool = hint.tool.to_ascii_lowercase();
+        let kind = match tool.as_str() {
+            "node.js" | "node" | "nodejs" => Some("node"),
+            "python" => Some("python"),
+            "jdk" | "java" => Some("jdk"),
+            "ruby" => Some("ruby"),
+            "go" | "golang" => Some("go"),
+            "rust" => Some("rust"),
+            ".net sdk" | "dotnet" => Some("dotnet"),
+            "deno" => Some("deno"),
+            "bun" => Some("bun"),
+            _ => None,
+        };
+        let Some(kind) = kind else {
+            hint.status = "declared".into();
+            continue;
+        };
+        let versions = sdk_cache
+            .entry(kind)
+            .or_insert_with(|| crate::sdk_scanner::scan_kind(kind));
+        hint.current_version = versions
+            .iter()
+            .find(|version| version.is_current)
+            .map(|version| version.version.clone());
+        let requirement = hint
+            .version
+            .trim()
+            .trim_start_matches('v')
+            .to_ascii_lowercase();
+        if let Some(found) = versions.iter().find(|version| {
+            version
+                .version
+                .trim_start_matches('v')
+                .to_ascii_lowercase()
+                .contains(&requirement)
+        }) {
+            hint.installed_home = Some(found.home.clone());
+            hint.status = if found.is_current {
+                "current"
+            } else {
+                "installed"
+            }
+            .into();
+        } else {
+            hint.status = "missing".into();
+        }
     }
 
     hints.sort_by(|a, b| a.tool.cmp(&b.tool).then(a.source.cmp(&b.source)));
@@ -166,6 +236,23 @@ pub fn health_check() -> HealthReport {
     let paths = path_manager::get_path_entries();
     let invalid: Vec<_> = paths.iter().filter(|e| e.safe_to_clean).collect();
     let dups: Vec<_> = paths.iter().filter(|e| e.duplicate).collect();
+    let unresolved_paths = paths
+        .iter()
+        .filter(|entry| entry.status == "unresolved")
+        .count();
+    let network_paths = paths
+        .iter()
+        .filter(|entry| entry.status == "networkUnavailable")
+        .count();
+    let (snapshot_issues, snapshot_check_error) = match crate::snapshot::count_invalid_snapshots() {
+        Ok(count) => (count, None),
+        Err(error) => (0, Some(error)),
+    };
+    let (incomplete_installs, install_check_error) =
+        match crate::installer::incomplete_install_count() {
+            Ok(count) => (count, None),
+            Err(error) => (0, Some(error)),
+        };
     let conflicts = vars.iter().filter(|v| v.conflicts_with.is_some()).count();
     let path_len = paths.iter().map(|e| e.raw.len() + 1).sum::<usize>();
 
@@ -191,6 +278,30 @@ pub fn health_check() -> HealthReport {
             path_len
         ));
     }
+    if unresolved_paths > 0 {
+        issues.push(format!(
+            "有 {unresolved_paths} 个 PATH 条目包含未解析的环境变量"
+        ));
+    }
+    if network_paths > 0 {
+        issues.push(format!(
+            "有 {network_paths} 个网络 PATH 当前不可访问（不会自动清理）"
+        ));
+    }
+    if snapshot_issues > 0 {
+        issues.push(format!("发现 {snapshot_issues} 个损坏或不兼容的快照文件"));
+    }
+    if incomplete_installs > 0 {
+        issues.push(format!(
+            "发现 {incomplete_installs} 个失败、取消或未完成的受管安装记录"
+        ));
+    }
+    if let Some(error) = snapshot_check_error {
+        issues.push(format!("无法检查快照完整性: {error}"));
+    }
+    if let Some(error) = install_check_error {
+        issues.push(format!("无法检查受管安装记录: {error}"));
+    }
     if issues.is_empty() {
         issues.push("未发现明显问题，环境很健康 ✨".into());
     }
@@ -201,6 +312,10 @@ pub fn health_check() -> HealthReport {
         duplicate_paths: dups.len(),
         conflicts,
         path_length: path_len,
+        unresolved_paths,
+        network_paths,
+        snapshot_issues,
+        incomplete_installs,
         issues,
     }
 }
@@ -262,12 +377,44 @@ pub fn preview_import(path: &str) -> Result<ImportPreview, String> {
         .chain(bundle.system.keys())
         .filter(|name| is_sensitive_name(name))
         .count();
+    let current_user = env_registry::scope_values_strict("user")?;
+    let current_system = env_registry::scope_values_strict("system")?;
+    let mut changes = import_changes("user", &current_user, &bundle.user);
+    changes.extend(import_changes("system", &current_system, &bundle.system));
     Ok(ImportPreview {
         user_count: bundle.user.len(),
         system_count: bundle.system.len(),
         sensitive_count,
         requires_elevation: !bundle.system.is_empty() && !win::is_elevated(),
+        changes,
     })
+}
+
+fn import_changes(
+    scope: &str,
+    current: &BTreeMap<String, String>,
+    incoming: &BTreeMap<String, String>,
+) -> Vec<crate::models::SnapshotChange> {
+    incoming
+        .iter()
+        .filter_map(|(name, after)| {
+            let before = current
+                .iter()
+                .find(|(candidate, _)| candidate.eq_ignore_ascii_case(name))
+                .map(|(_, value)| value.clone());
+            if before.as_ref() == Some(after) {
+                return None;
+            }
+            Some(crate::models::SnapshotChange {
+                scope: scope.into(),
+                name: name.clone(),
+                kind: if before.is_some() { "modify" } else { "add" }.into(),
+                before,
+                after: Some(after.clone()),
+                sensitive: is_sensitive_name(name),
+            })
+        })
+        .collect()
 }
 
 pub fn export_vars(path: &str) -> Result<(), String> {
@@ -329,6 +476,76 @@ pub fn import_vars(path: &str) -> Result<usize, String> {
     Ok(count)
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct ResolvedImport {
+    scope: String,
+    name: String,
+    value: String,
+}
+
+fn resolve_import_selections(
+    bundle: &ExportBundle,
+    selections: &[SnapshotSelection],
+) -> Result<Vec<ResolvedImport>, String> {
+    if selections.is_empty() {
+        return Err("请至少选择一个要导入的变量".into());
+    }
+    if selections.len() > 2_048 {
+        return Err("单次导入的变量数量超过安全上限".into());
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut resolved = Vec::with_capacity(selections.len());
+    for selection in selections {
+        env_registry::validate_scope(&selection.scope)?;
+        env_registry::validate_name(&selection.name)?;
+        let key = format!(
+            "{}:{}",
+            selection.scope,
+            selection.name.to_ascii_lowercase()
+        );
+        if !seen.insert(key) {
+            return Err(format!(
+                "重复的导入项目: {} {}",
+                selection.scope, selection.name
+            ));
+        }
+        let source = if selection.scope == "system" {
+            &bundle.system
+        } else {
+            &bundle.user
+        };
+        let (name, value) = source
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(&selection.name))
+            .ok_or_else(|| format!("导入文件中不存在 {} {}", selection.scope, selection.name))?;
+        resolved.push(ResolvedImport {
+            scope: selection.scope.clone(),
+            name: name.clone(),
+            value: value.clone(),
+        });
+    }
+    Ok(resolved)
+}
+
+pub fn import_vars_selected(
+    path: &str,
+    selections: Vec<SnapshotSelection>,
+) -> Result<usize, String> {
+    let bundle = parse_import(path)?;
+    let resolved = resolve_import_selections(&bundle, &selections)?;
+    if resolved.iter().any(|item| item.scope == "system") && !win::is_elevated() {
+        return Err("所选导入项目包含系统变量，请先以管理员身份运行".into());
+    }
+    for item in &resolved {
+        env_registry::set_env_var(&item.scope, &item.name, &item.value)
+            .map_err(|error| format!("导入 {} 变量 {} 失败: {error}", item.scope, item.name))?;
+    }
+    win::broadcast_env_change();
+    let count = resolved.len();
+    crate::snapshot::audit("import_selected", &format!("导入 {count} 个环境变量"));
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -344,5 +561,74 @@ mod tests {
     #[test]
     fn small_text_reader_rejects_missing_files() {
         assert!(read_small_text(Path::new("definitely-missing-envbox-project-file")).is_none());
+    }
+
+    #[test]
+    fn selected_imports_are_resolved_from_the_file_case_insensitively() {
+        let bundle = ExportBundle {
+            version: export_version(),
+            system: BTreeMap::from([("JAVA_HOME".into(), "C:\\Java\\21".into())]),
+            user: BTreeMap::from([("Node_Home".into(), "C:\\Node".into())]),
+        };
+        let selections = vec![SnapshotSelection {
+            scope: "user".into(),
+            name: "node_home".into(),
+        }];
+
+        let resolved = resolve_import_selections(&bundle, &selections).unwrap();
+        assert_eq!(
+            resolved,
+            vec![ResolvedImport {
+                scope: "user".into(),
+                name: "Node_Home".into(),
+                value: "C:\\Node".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn selected_imports_reject_duplicates_and_unknown_entries() {
+        let bundle = ExportBundle {
+            version: export_version(),
+            system: BTreeMap::new(),
+            user: BTreeMap::from([("JAVA_HOME".into(), "C:\\Java".into())]),
+        };
+        let duplicate = vec![
+            SnapshotSelection {
+                scope: "user".into(),
+                name: "JAVA_HOME".into(),
+            },
+            SnapshotSelection {
+                scope: "user".into(),
+                name: "java_home".into(),
+            },
+        ];
+        assert!(resolve_import_selections(&bundle, &duplicate).is_err());
+        assert!(resolve_import_selections(
+            &bundle,
+            &[SnapshotSelection {
+                scope: "user".into(),
+                name: "MISSING".into(),
+            }]
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn import_diff_omits_unchanged_values_and_masks_sensitive_names() {
+        let current = BTreeMap::from([("TOKEN".into(), "old".into())]);
+        let incoming = BTreeMap::from([
+            ("token".into(), "new".into()),
+            ("UNCHANGED".into(), "same".into()),
+        ]);
+        let current = current
+            .into_iter()
+            .chain([("UNCHANGED".into(), "same".into())])
+            .collect();
+
+        let changes = import_changes("user", &current, &incoming);
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].kind, "modify");
+        assert!(changes[0].sensitive);
     }
 }

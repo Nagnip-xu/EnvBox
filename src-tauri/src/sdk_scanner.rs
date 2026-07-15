@@ -2,7 +2,11 @@ use crate::env_registry;
 use crate::models::SdkVersion;
 use crate::win;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
+
+const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_VERSION_OUTPUT: usize = 64 * 1024;
 
 #[cfg(windows)]
 fn no_window(cmd: &mut Command) {
@@ -11,6 +15,42 @@ fn no_window(cmd: &mut Command) {
 }
 #[cfg(not(windows))]
 fn no_window(_cmd: &mut Command) {}
+
+fn read_limited<R: std::io::Read + Send + 'static>(
+    mut reader: R,
+) -> std::thread::JoinHandle<Vec<u8>> {
+    std::thread::spawn(move || {
+        let mut kept = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) | Err(_) => break,
+                Ok(count) => {
+                    let remaining = MAX_VERSION_OUTPUT.saturating_sub(kept.len());
+                    kept.extend_from_slice(&buffer[..count.min(remaining)]);
+                }
+            }
+        }
+        kept
+    })
+}
+
+#[cfg(windows)]
+fn terminate_process_tree(child: &mut Child) {
+    let mut taskkill = Command::new("taskkill.exe");
+    taskkill.args(["/PID", &child.id().to_string(), "/T", "/F"]);
+    no_window(&mut taskkill);
+    let _ = taskkill
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    let _ = child.kill();
+}
+
+#[cfg(not(windows))]
+fn terminate_process_tree(child: &mut Child) {
+    let _ = child.kill();
+}
 
 /// 每类 SDK/工具的检测与切换规格
 pub struct KindSpec {
@@ -196,10 +236,36 @@ fn run_first_line(exe: &Path, args: &[&str]) -> Option<String> {
         c
     };
     no_window(&mut cmd);
-    let out = cmd.output().ok()?;
-    let mut text = String::from_utf8_lossy(&out.stdout).to_string();
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().ok()?;
+    let stdout = child.stdout.take().map(read_limited);
+    let stderr = child.stderr.take().map(read_limited);
+    let started = Instant::now();
+    let success = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status.success(),
+            Ok(None) if started.elapsed() < VERSION_TIMEOUT => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Ok(None) | Err(_) => {
+                terminate_process_tree(&mut child);
+                let _ = child.wait();
+                return Some("版本检测超时".into());
+            }
+        }
+    };
+    let stdout = stdout
+        .and_then(|handle| handle.join().ok())
+        .unwrap_or_default();
+    let stderr = stderr
+        .and_then(|handle| handle.join().ok())
+        .unwrap_or_default();
+    let mut text = String::from_utf8_lossy(&stdout).to_string();
     if text.trim().is_empty() {
-        text = String::from_utf8_lossy(&out.stderr).to_string();
+        text = String::from_utf8_lossy(&stderr).to_string();
+    }
+    if !success && text.trim().is_empty() {
+        return None;
     }
     text.lines()
         .map(|l| l.trim())
@@ -491,11 +557,38 @@ pub fn scan_kind(kind: &str) -> Vec<SdkVersion> {
 }
 
 pub fn scan_all() -> Vec<SdkVersion> {
-    let mut all = Vec::new();
-    for kind in ALL_KINDS {
-        all.extend(scan_kind(kind));
+    let worker_count = std::thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(2)
+        .clamp(1, 4)
+        .min(ALL_KINDS.len());
+    let mut groups = vec![Vec::new(); worker_count];
+    for (index, kind) in ALL_KINDS.iter().enumerate() {
+        groups[index % worker_count].push((index, *kind));
     }
-    all
+    let mut indexed = std::thread::scope(|scope| {
+        let handles = groups
+            .into_iter()
+            .map(|group| {
+                scope.spawn(move || {
+                    group
+                        .into_iter()
+                        .map(|(index, kind)| (index, scan_kind(kind)))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .filter_map(|handle| handle.join().ok())
+            .flatten()
+            .collect::<Vec<_>>()
+    });
+    indexed.sort_by_key(|(index, _)| *index);
+    indexed
+        .into_iter()
+        .flat_map(|(_, versions)| versions)
+        .collect()
 }
 
 /// 从用户 PATH 移除所有指向某类工具 exe 的条目

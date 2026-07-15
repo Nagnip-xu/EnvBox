@@ -24,6 +24,7 @@ export default function Snapshots() {
   const [restorePreview, setRestorePreview] = useState<SnapshotPreview | null>(null);
   const [previewingId, setPreviewingId] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [selectedChanges, setSelectedChanges] = useState<Set<string>>(new Set());
   const [del, setDel] = useState<Snapshot | null>(null);
   const [creating, setCreating] = useState(false);
   const [snapName, setSnapName] = useState("");
@@ -103,9 +104,13 @@ export default function Snapshots() {
 
   async function doRestore() {
     if (!restorePreview) return;
+    const selections = restorePreview.changes
+      .filter((change) => selectedChanges.has(`${change.scope}:${change.name.toLowerCase()}`))
+      .map((change) => ({ scope: change.scope, name: change.name }));
+    if (selections.length === 0) return;
     setRestoring(true);
     try {
-      await api.restoreSnapshot(restorePreview.snapshotId);
+      await api.restoreSnapshotSelected(restorePreview.snapshotId, selections);
       pushToast(t("toast.snapRestored"), "success");
       setRestorePreview(null);
       bumpRefresh();
@@ -119,7 +124,11 @@ export default function Snapshots() {
   async function openRestore(snapshot: Snapshot) {
     setPreviewingId(snapshot.id);
     try {
-      setRestorePreview(await api.previewSnapshotRestore(snapshot.id));
+      const preview = await api.previewSnapshotRestore(snapshot.id);
+      setRestorePreview(preview);
+      setSelectedChanges(
+        new Set(preview.changes.map((change) => `${change.scope}:${change.name.toLowerCase()}`))
+      );
     } catch (e) {
       pushToast(t("toast.snapRestoreFail", { err: errorMessage(e) }), "error");
     } finally {
@@ -133,6 +142,16 @@ export default function Snapshots() {
     } catch (e) {
       pushToast(t("toast.relaunchFail", { err: errorMessage(e) }), "error");
     }
+  }
+
+  function toggleChange(scope: string, name: string) {
+    const key = `${scope}:${name.toLowerCase()}`;
+    setSelectedChanges((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   }
 
   return (
@@ -277,7 +296,38 @@ export default function Snapshots() {
               </span>
             </div>
 
-            {restorePreview.requiresElevation && (
+            <label className="flex items-center gap-2 text-sm text-neutral-300">
+              <input
+                type="checkbox"
+                ref={(input) => {
+                  if (input) {
+                    input.indeterminate =
+                      selectedChanges.size > 0 &&
+                      selectedChanges.size < restorePreview.changes.length;
+                  }
+                }}
+                checked={selectedChanges.size === restorePreview.changes.length && restorePreview.changes.length > 0}
+                onChange={(event) =>
+                  setSelectedChanges(
+                    event.target.checked
+                      ? new Set(
+                          restorePreview.changes.map(
+                            (change) => `${change.scope}:${change.name.toLowerCase()}`
+                          )
+                        )
+                      : new Set()
+                  )
+                }
+              />
+              {t("snap.diff.selected", { selected: selectedChanges.size, total: restorePreview.changes.length })}
+            </label>
+
+            {restorePreview.requiresElevation &&
+              restorePreview.changes.some(
+                (change) =>
+                  change.scope === "system" &&
+                  selectedChanges.has(`${change.scope}:${change.name.toLowerCase()}`)
+              ) && (
               <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">
                 <ShieldAlert size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
                 <span>{t("snap.diff.adminRequired")}</span>
@@ -289,10 +339,17 @@ export default function Snapshots() {
                 <div className="p-6 text-center text-sm text-neutral-500">{t("snap.diff.none")}</div>
               ) : (
                 restorePreview.changes.map((change) => (
-                  <div
+                  <label
                     key={`${change.scope}-${change.name}`}
-                    className="border-b border-neutral-800 p-3 last:border-b-0"
+                    className="flex cursor-pointer gap-3 border-b border-neutral-800 p-3 last:border-b-0 hover:bg-neutral-800/30"
                   >
+                    <input
+                      type="checkbox"
+                      className="mt-1 shrink-0"
+                      checked={selectedChanges.has(`${change.scope}:${change.name.toLowerCase()}`)}
+                      onChange={() => toggleChange(change.scope, change.name)}
+                    />
+                    <div className="min-w-0 flex-1">
                     <div className="mb-2 flex items-center gap-2">
                       <span className="font-mono text-sm text-neutral-200">{change.name}</span>
                       <span className="tag bg-neutral-800 text-neutral-400">
@@ -319,7 +376,8 @@ export default function Snapshots() {
                         {displaySensitiveValue(change.after, change.sensitive)}
                       </span>
                     </div>
-                  </div>
+                    </div>
+                  </label>
                 ))
               )}
             </div>
@@ -333,7 +391,12 @@ export default function Snapshots() {
               >
                 {t("common.cancel")}
               </button>
-              {restorePreview.requiresElevation ? (
+              {restorePreview.requiresElevation &&
+              restorePreview.changes.some(
+                (change) =>
+                  change.scope === "system" &&
+                  selectedChanges.has(`${change.scope}:${change.name.toLowerCase()}`)
+              ) ? (
                 <button className="btn-primary" onClick={relaunchAdmin}>
                   <ShieldAlert size={15} aria-hidden="true" />
                   {t("settings.perm.relaunch")}
@@ -341,7 +404,7 @@ export default function Snapshots() {
               ) : (
                 <button
                   className="btn bg-rose-600 text-white hover:bg-rose-500"
-                  disabled={restoring || restorePreview.changes.length === 0}
+                  disabled={restoring || selectedChanges.size === 0}
                   onClick={doRestore}
                 >
                   {restoring ? (

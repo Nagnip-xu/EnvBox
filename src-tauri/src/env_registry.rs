@@ -1,4 +1,5 @@
 use crate::models::EnvVar;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 const MAX_ENV_NAME_LEN: usize = 255;
@@ -48,28 +49,45 @@ const USER_SUBKEY: &str = "Environment";
 
 /// 读取某作用域下的原始变量（保留大小写的变量名 -> (值, 是否含%VAR%)）
 #[cfg(windows)]
-fn read_scope(scope: &str) -> HashMap<String, (String, bool)> {
+fn read_scope_strict(scope: &str) -> Result<HashMap<String, (String, bool)>, String> {
     use winreg::enums::*;
     use winreg::RegKey;
 
+    validate_scope(scope)?;
     let mut map = HashMap::new();
     let (root, sub) = match scope {
         "system" => (RegKey::predef(HKEY_LOCAL_MACHINE), SYSTEM_SUBKEY),
-        _ => (RegKey::predef(HKEY_CURRENT_USER), USER_SUBKEY),
+        "user" => (RegKey::predef(HKEY_CURRENT_USER), USER_SUBKEY),
+        _ => unreachable!("scope validated above"),
     };
-    if let Ok(key) = root.open_subkey(sub) {
-        for (name, value) in key.enum_values().flatten() {
-            let s = value.to_string();
-            let expandable = value.vtype == REG_EXPAND_SZ || s.contains('%');
-            map.insert(name, (s, expandable));
-        }
+    let key = root
+        .open_subkey(sub)
+        .map_err(|error| format!("无法读取 {scope} 环境变量注册表: {error}"))?;
+    for value in key.enum_values() {
+        let (name, value) = value.map_err(|error| format!("枚举 {scope} 环境变量失败: {error}"))?;
+        let text = value.to_string();
+        let expandable = value.vtype == REG_EXPAND_SZ || text.contains('%');
+        map.insert(name, (text, expandable));
     }
-    map
+    Ok(map)
 }
 
 #[cfg(not(windows))]
-fn read_scope(_scope: &str) -> HashMap<String, (String, bool)> {
-    HashMap::new()
+fn read_scope_strict(_scope: &str) -> Result<HashMap<String, (String, bool)>, String> {
+    Err("严格作用域读取仅支持 Windows".into())
+}
+
+fn read_scope(scope: &str) -> HashMap<String, (String, bool)> {
+    read_scope_strict(scope).unwrap_or_default()
+}
+
+pub fn scope_values_strict(scope: &str) -> Result<BTreeMap<String, String>, String> {
+    read_scope_strict(scope).map(|values| {
+        values
+            .into_iter()
+            .map(|(name, (value, _))| (name, value))
+            .collect()
+    })
 }
 
 /// 所有变量合并成一个大写键的映射，供 %VAR% 展开使用（用户覆盖系统）。

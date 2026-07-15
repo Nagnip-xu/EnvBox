@@ -55,6 +55,18 @@ const dict: Record<string, Entry> = {
     en: "Confirm environment import",
     ja: "環境変数のインポートを確認",
   },
+  "topbar.importNoChanges": {
+    zh: "导入文件中的变量已与当前环境一致。",
+    zhHant: "匯入檔案中的變數已與目前環境一致。",
+    en: "The variables in this file already match the current environment.",
+    ja: "ファイル内の変数は現在の環境と一致しています。",
+  },
+  "topbar.importAdminRequired": {
+    zh: "所选项目包含系统变量，请先以管理员身份重启 EnvBox。",
+    zhHant: "所選項目包含系統變數，請先以系統管理員身分重新啟動 EnvBox。",
+    en: "The selection includes system variables. Restart EnvBox as administrator first.",
+    ja: "選択項目にシステム変数が含まれます。管理者として EnvBox を再起動してください。",
+  },
   "topbar.importConfirmMessage": {
     zh: "文件包含用户变量 {user} 个、系统变量 {system} 个，其中疑似敏感变量 {sensitive} 个。导入前将强制创建安全快照。",
     zhHant: "檔案包含使用者變數 {user} 個、系統變數 {system} 個，其中疑似敏感變數 {sensitive} 個。匯入前將強制建立安全快照。",
@@ -117,6 +129,12 @@ const dict: Record<string, Entry> = {
     zhHant: "目前環境已與該快照一致，無需還原。",
     en: "The current environment already matches this snapshot.",
     ja: "現在の環境はこのスナップショットと一致しています。",
+  },
+  "snap.diff.selected": {
+    zh: "已选择 {selected} / {total} 项变化",
+    zhHant: "已選擇 {selected} / {total} 項變更",
+    en: "Selected {selected} of {total} changes",
+    ja: "{total} 件中 {selected} 件を選択",
   },
   "snap.diff.adminRequired": {
     zh: "该恢复会修改系统变量，需要管理员权限。当前不会执行任何变量修改。",
@@ -275,6 +293,18 @@ const dict: Record<string, Entry> = {
   "sdk.envVar": { zh: "环境变量：{var}", zhHant: "環境變數：{var}", en: "Env var: {var}", ja: "環境変数：{var}" },
   "sdk.installNew": { zh: "下载安装新版本", zhHant: "下載安裝新版本", en: "Install New Version", ja: "新バージョンを追加" },
   "sdk.current": { zh: "当前", zhHant: "目前", en: "Current", ja: "現在" },
+  "sdk.cancelTask": {
+    zh: "取消任务",
+    zhHant: "取消任務",
+    en: "Cancel task",
+    ja: "タスクをキャンセル",
+  },
+  "sdk.progressLog": {
+    zh: "任务实时日志",
+    zhHant: "任務即時日誌",
+    en: "Live task log",
+    ja: "タスクのリアルタイムログ",
+  },
   "sdk.managedBy": {
     zh: "由 {manager} 管理",
     zhHant: "由 {manager} 管理",
@@ -359,6 +389,7 @@ const dict: Record<string, Entry> = {
   "phase.cleaning": { zh: "清理中...", zhHant: "清理中...", en: "Cleaning up...", ja: "クリーンアップ中..." },
   "phase.done": { zh: "完成 ✅", zhHant: "完成 ✅", en: "Done ✅", ja: "完了 ✅" },
   "phase.error": { zh: "出错 ❌", zhHant: "出錯 ❌", en: "Error ❌", ja: "エラー ❌" },
+  "phase.cancelled": { zh: "已取消", zhHant: "已取消", en: "Cancelled", ja: "キャンセル済み" },
   "phase.uninstall.preparing": { zh: "准备中...", zhHant: "準備中...", en: "Preparing...", ja: "準備中..." },
   "phase.uninstall.running": { zh: "卸载中...", zhHant: "解除安裝中...", en: "Uninstalling...", ja: "アンインストール中..." },
   "phase.uninstall.cleaning": {
@@ -519,6 +550,10 @@ const dict: Record<string, Entry> = {
   "settings.health.invalid": { zh: "无效路径", zhHant: "無效路徑", en: "Invalid Paths", ja: "無効パス" },
   "settings.health.dup": { zh: "重复项", zhHant: "重複項", en: "Duplicates", ja: "重複" },
   "settings.health.conflict": { zh: "冲突", zhHant: "衝突", en: "Conflicts", ja: "競合" },
+  "settings.health.unresolved": { zh: "未解析 PATH", zhHant: "未解析 PATH", en: "Unresolved PATH", ja: "未解決 PATH" },
+  "settings.health.network": { zh: "网络 PATH", zhHant: "網路 PATH", en: "Network PATH", ja: "ネットワーク PATH" },
+  "settings.health.snapshots": { zh: "快照异常", zhHant: "快照異常", en: "Snapshot issues", ja: "スナップショット異常" },
+  "settings.health.installs": { zh: "安装残留", zhHant: "安裝殘留", en: "Install remnants", ja: "インストール残留" },
 
   "settings.lang.title": { zh: "界面语言", zhHant: "介面語言", en: "Language", ja: "表示言語" },
   "settings.lang.desc": {
@@ -585,6 +620,36 @@ const dict: Record<string, Entry> = {
     zhHant: "檢查專案失敗：{err}",
     en: "Project inspection failed: {err}",
     ja: "プロジェクトの確認に失敗しました：{err}",
+  },
+  "settings.project.status.current": {
+    zh: "当前已生效",
+    zhHant: "目前已生效",
+    en: "Current",
+    ja: "現在使用中",
+  },
+  "settings.project.status.installed": {
+    zh: "已安装未生效",
+    zhHant: "已安裝未生效",
+    en: "Installed, not active",
+    ja: "インストール済み・未使用",
+  },
+  "settings.project.status.missing": {
+    zh: "本机缺失",
+    zhHant: "本機缺少",
+    en: "Missing locally",
+    ja: "ローカルに未導入",
+  },
+  "settings.project.status.wrapper": {
+    zh: "项目 Wrapper",
+    zhHant: "專案 Wrapper",
+    en: "Project wrapper",
+    ja: "プロジェクト Wrapper",
+  },
+  "settings.project.status.declared": {
+    zh: "已声明",
+    zhHant: "已宣告",
+    en: "Declared",
+    ja: "宣言済み",
   },
   "settings.mirror.title": { zh: "下载镜像源", zhHant: "下載鏡像源", en: "Download Mirror", ja: "ダウンロードミラー" },
   "settings.mirror.desc": {
@@ -685,6 +750,24 @@ const dict: Record<string, Entry> = {
   "toast.terminalFail": { zh: "打开失败：{err}", zhHant: "開啟失敗：{err}", en: "Open failed: {err}", ja: "オープン失敗：{err}" },
   "toast.installed": { zh: "{target} 安装完成", zhHant: "{target} 安裝完成", en: "{target} installed", ja: "{target} のインストール完了" },
   "toast.installFail": { zh: "安装失败：{target}", zhHant: "安裝失敗：{target}", en: "Install failed: {target}", ja: "インストール失敗：{target}" },
+  "toast.jobCancelled": {
+    zh: "任务已取消，请运行环境体检确认没有残留",
+    zhHant: "任務已取消，請執行環境健檢確認沒有殘留",
+    en: "The task was cancelled. Run an environment health check for partial changes.",
+    ja: "タスクをキャンセルしました。環境チェックで残留変更を確認してください。",
+  },
+  "toast.jobNotRunning": {
+    zh: "任务已结束或当前不支持取消",
+    zhHant: "任務已結束或目前不支援取消",
+    en: "The task has ended or cannot be cancelled at this stage.",
+    ja: "タスクは終了済み、または現在キャンセルできません。",
+  },
+  "toast.cancelFail": {
+    zh: "取消任务失败：{err}",
+    zhHant: "取消任務失敗：{err}",
+    en: "Failed to cancel the task: {err}",
+    ja: "タスクのキャンセルに失敗しました：{err}",
+  },
   "toast.installStartFail": { zh: "无法启动安装：{err}", zhHant: "無法啟動安裝：{err}", en: "Cannot start install: {err}", ja: "インストールを開始できません：{err}" },
   "toast.startFail": { zh: "启动失败：{err}", zhHant: "啟動失敗：{err}", en: "Start failed: {err}", ja: "開始に失敗：{err}" },
   "toast.uninstalled": { zh: "{target} 已卸载", zhHant: "{target} 已解除安裝", en: "{target} uninstalled", ja: "{target} をアンインストールしました" },

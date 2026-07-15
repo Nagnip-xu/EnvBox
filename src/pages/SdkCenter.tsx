@@ -340,6 +340,7 @@ const UNINSTALL_PHASE_KEY: Record<string, string> = {
   cleaning: "phase.uninstall.cleaning",
   done: "phase.done",
   error: "phase.error",
+  cancelled: "phase.cancelled",
 };
 
 const INSTALL_PHASE_KEY: Record<string, string> = {
@@ -349,6 +350,7 @@ const INSTALL_PHASE_KEY: Record<string, string> = {
   cleaning: "phase.cleaning",
   done: "phase.done",
   error: "phase.error",
+  cancelled: "phase.cancelled",
 };
 
 function UninstallModal({
@@ -366,6 +368,7 @@ function UninstallModal({
   const logRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
   const jobId = useRef<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -379,6 +382,8 @@ function UninstallModal({
           onDone();
         } else if (p.phase === "error") {
           pushToast(t("toast.uninstallFail", { err: target.version }), "error");
+        } else if (p.phase === "cancelled") {
+          pushToast(t("toast.jobCancelled"), "info");
         }
       });
       if (!started.current) {
@@ -405,7 +410,20 @@ function UninstallModal({
     logRef.current?.scrollTo(0, logRef.current.scrollHeight);
   }, [lines]);
 
-  const done = phase === "done" || phase === "error";
+  async function cancel() {
+    if (!jobId.current) return;
+    setCancelling(true);
+    try {
+      const requested = await api.cancelJob(jobId.current);
+      if (!requested) pushToast(t("toast.jobNotRunning"), "info");
+    } catch (error) {
+      pushToast(t("toast.cancelFail", { err: errorMessage(error) }), "error");
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  const done = phase === "done" || phase === "error" || phase === "cancelled";
 
   return (
     <Modal
@@ -415,7 +433,7 @@ function UninstallModal({
       width="max-w-2xl"
     >
       <div>
-        <div className="mb-2 flex items-center gap-2 text-sm">
+        <div className="mb-2 flex items-center gap-2 text-sm" role="status" aria-live="polite">
           {!done && <Loader2 size={16} className="animate-spin text-brand-300" />}
           <span className="font-medium text-neutral-200">
             {UNINSTALL_PHASE_KEY[phase] ? t(UNINSTALL_PHASE_KEY[phase]) : phase}
@@ -423,6 +441,9 @@ function UninstallModal({
         </div>
         <div
           ref={logRef}
+          role="log"
+          aria-live="polite"
+          aria-label={t("sdk.progressLog")}
           className="h-64 overflow-y-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 font-mono text-xs leading-relaxed text-neutral-400"
         >
           {lines.map((l, i) => (
@@ -439,7 +460,15 @@ function UninstallModal({
             </button>
           </div>
         )}
-        {!done && <div className="mt-3 text-xs text-neutral-500">{t("sdk.uacNote")}</div>}
+        {!done && (
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span className="text-xs text-neutral-500">{t("sdk.uacNote")}</span>
+            <button className="btn-ghost border border-neutral-800" disabled={cancelling || !jobId.current} onClick={cancel}>
+              {cancelling && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
+              {t("sdk.cancelTask")}
+            </button>
+          </div>
+        )}
       </div>
     </Modal>
   );
@@ -464,6 +493,7 @@ function InstallModal({
   const { pushToast, installPath, t } = useStore();
   const logRef = useRef<HTMLDivElement>(null);
   const activeJobId = useRef<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     api.listInstallable(kind).then((l) => {
@@ -496,6 +526,8 @@ function InstallModal({
         }, 1200);
       } else if (p.phase === "error") {
         pushToast(t("toast.installFail", { target: p.target }), "error");
+      } else if (p.phase === "cancelled") {
+        pushToast(t("toast.jobCancelled"), "info");
       }
     });
     try {
@@ -512,6 +544,19 @@ function InstallModal({
       setPhase("error");
       pushToast(t("toast.installStartFail", { err: message }), "error");
       unlisten();
+    }
+  }
+
+  async function cancelInstall() {
+    if (!activeJobId.current) return;
+    setCancelling(true);
+    try {
+      const requested = await api.cancelJob(activeJobId.current);
+      if (!requested) pushToast(t("toast.jobNotRunning"), "info");
+    } catch (error) {
+      pushToast(t("toast.cancelFail", { err: errorMessage(error) }), "error");
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -592,8 +637,8 @@ function InstallModal({
         </div>
       ) : (
         <div>
-          <div className="mb-2 flex items-center gap-2 text-sm">
-            {phase !== "done" && phase !== "error" && (
+          <div className="mb-2 flex items-center gap-2 text-sm" role="status" aria-live="polite">
+            {phase !== "done" && phase !== "error" && phase !== "cancelled" && (
               <Loader2 size={16} className="animate-spin text-brand-300" />
             )}
             <span className="font-medium text-neutral-200">
@@ -602,6 +647,9 @@ function InstallModal({
           </div>
           <div
             ref={logRef}
+            role="log"
+            aria-live="polite"
+            aria-label={t("sdk.progressLog")}
             className="h-64 overflow-y-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 font-mono text-xs leading-relaxed text-neutral-400"
           >
             {lines.map((l, i) => (
@@ -611,10 +659,22 @@ function InstallModal({
             ))}
             {lines.length === 0 && <div className="text-neutral-600">{t("sdk.waiting")}</div>}
           </div>
-          {(phase === "done" || phase === "error") && (
+          {(phase === "done" || phase === "error" || phase === "cancelled") && (
             <div className="mt-4 flex justify-end">
               <button className="btn-primary" onClick={onClose}>
                 {t("common.close")}
+              </button>
+            </div>
+          )}
+          {phase !== "done" && phase !== "error" && phase !== "cancelled" && (
+            <div className="mt-4 flex justify-end">
+              <button
+                className="btn-ghost border border-neutral-800"
+                disabled={cancelling || !activeJobId.current}
+                onClick={cancelInstall}
+              >
+                {cancelling && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
+                {t("sdk.cancelTask")}
               </button>
             </div>
           )}

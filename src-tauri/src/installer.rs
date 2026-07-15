@@ -1,10 +1,207 @@
-use crate::models::{EngineStatus, InstallableVersion, JobProgress};
+use crate::models::{EngineStatus, InstallableVersion, JobProgress, ManagedInstall};
 use crate::win;
 use crate::{env_registry, snapshot};
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
+
+const MAX_JOB_LOG_LINES: usize = 2_000;
+const MAX_JOB_LOG_BYTES: usize = 1024 * 1024;
+
+fn running_jobs() -> &'static Mutex<HashMap<String, u32>> {
+    static JOBS: OnceLock<Mutex<HashMap<String, u32>>> = OnceLock::new();
+    JOBS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn cancelled_jobs() -> &'static Mutex<HashSet<String>> {
+    static CANCELLED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    CANCELLED.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn manifest_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+#[derive(Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstallManifest {
+    #[serde(default = "manifest_schema_version")]
+    schema_version: u32,
+    #[serde(default)]
+    installs: Vec<ManagedInstall>,
+}
+
+fn manifest_schema_version() -> u32 {
+    1
+}
+
+fn validate_manifest_schema(manifest: &InstallManifest) -> Result<(), String> {
+    if manifest.schema_version != manifest_schema_version() {
+        Err(format!("不支持的安装清单版本: {}", manifest.schema_version))
+    } else {
+        Ok(())
+    }
+}
+
+fn manifest_path() -> Result<std::path::PathBuf, String> {
+    let directory = snapshot::ensure_data_dir()?;
+    Ok(directory.join("installs.json"))
+}
+
+fn load_manifest() -> Result<InstallManifest, String> {
+    let path = manifest_path()?;
+    if !path.exists() {
+        return Ok(InstallManifest {
+            schema_version: manifest_schema_version(),
+            installs: Vec::new(),
+        });
+    }
+    let text =
+        std::fs::read_to_string(path).map_err(|error| format!("无法读取安装清单: {error}"))?;
+    let manifest: InstallManifest =
+        serde_json::from_str(&text).map_err(|error| format!("安装清单损坏: {error}"))?;
+    validate_manifest_schema(&manifest)?;
+    Ok(manifest)
+}
+
+fn save_manifest(manifest: &InstallManifest) -> Result<(), String> {
+    let path = manifest_path()?;
+    let temporary = path.with_extension("json.tmp");
+    let json = serde_json::to_vec_pretty(manifest).map_err(|error| error.to_string())?;
+    {
+        use std::io::Write;
+        let mut output = std::fs::File::create(&temporary)
+            .map_err(|error| format!("无法创建安装清单临时文件: {error}"))?;
+        output
+            .write_all(&json)
+            .and_then(|_| output.sync_all())
+            .map_err(|error| format!("无法写入安装清单: {error}"))?;
+    }
+    atomic_replace(&temporary, &path)
+}
+
+#[cfg(windows)]
+fn atomic_replace(source: &Path, destination: &Path) -> Result<(), String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use winapi::um::winbase::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH};
+
+    let wide = |value: &OsStr| {
+        value
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect::<Vec<_>>()
+    };
+    let source = wide(source.as_os_str());
+    let destination = wide(destination.as_os_str());
+    let result = unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if result == 0 {
+        Err(format!(
+            "无法原子提交安装清单: {}",
+            std::io::Error::last_os_error()
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+fn atomic_replace(source: &Path, destination: &Path) -> Result<(), String> {
+    std::fs::rename(source, destination).map_err(|error| format!("无法提交安装清单: {error}"))
+}
+
+fn record_install_started(record: ManagedInstall) -> Result<(), String> {
+    let _guard = manifest_lock()
+        .lock()
+        .map_err(|_| "安装清单锁已损坏".to_string())?;
+    let mut manifest = load_manifest()?;
+    manifest.installs.retain(|item| item.id != record.id);
+    manifest.installs.push(record);
+    save_manifest(&manifest)
+}
+
+fn update_install_status(job_id: &str, status: &str) -> Result<(), String> {
+    let _guard = manifest_lock()
+        .lock()
+        .map_err(|_| "安装清单锁已损坏".to_string())?;
+    let mut manifest = load_manifest()?;
+    let record = manifest
+        .installs
+        .iter_mut()
+        .find(|item| item.job_id == job_id)
+        .ok_or_else(|| "安装任务不在所有权清单中".to_string())?;
+    record.status = status.into();
+    if status == "installed" {
+        let previous = record
+            .previous_homes
+            .iter()
+            .map(|home| home.trim_end_matches('\\').to_ascii_lowercase())
+            .collect::<HashSet<_>>();
+        record.detected_homes = crate::sdk_scanner::scan_kind(&record.kind)
+            .into_iter()
+            .map(|version| version.home)
+            .filter(|home| !previous.contains(&home.trim_end_matches('\\').to_ascii_lowercase()))
+            .collect();
+        if record.detected_homes.is_empty() && !record.requested_location.is_empty() {
+            record
+                .detected_homes
+                .push(record.requested_location.clone());
+        }
+    }
+    save_manifest(&manifest)
+}
+
+fn update_install_record_status(record_id: &str, status: &str) -> Result<(), String> {
+    let _guard = manifest_lock()
+        .lock()
+        .map_err(|_| "安装清单锁已损坏".to_string())?;
+    let mut manifest = load_manifest()?;
+    let record = manifest
+        .installs
+        .iter_mut()
+        .find(|item| item.id == record_id)
+        .ok_or_else(|| "安装记录不存在".to_string())?;
+    record.status = status.into();
+    save_manifest(&manifest)
+}
+
+pub fn list_managed_installs() -> Result<Vec<ManagedInstall>, String> {
+    let _guard = manifest_lock()
+        .lock()
+        .map_err(|_| "安装清单锁已损坏".to_string())?;
+    Ok(load_manifest()?.installs)
+}
+
+pub fn incomplete_install_count() -> Result<usize, String> {
+    Ok(list_managed_installs()?
+        .iter()
+        .filter(|record| matches!(record.status.as_str(), "running" | "failed" | "cancelled"))
+        .count())
+}
+
+fn managed_install_for_home(kind: &str, home: &str) -> Result<Option<ManagedInstall>, String> {
+    let key = home.trim_end_matches('\\').to_ascii_lowercase();
+    Ok(list_managed_installs()?.into_iter().find(|record| {
+        record.kind == kind
+            && record.status == "installed"
+            && record
+                .detected_homes
+                .iter()
+                .any(|candidate| candidate.trim_end_matches('\\').to_ascii_lowercase() == key)
+    }))
+}
 
 #[cfg(windows)]
 fn no_window(cmd: &mut Command) {
@@ -320,6 +517,129 @@ fn emit(app: &AppHandle, p: JobProgress) {
     let _ = app.emit("job://progress", p);
 }
 
+#[derive(Clone)]
+struct OutputStreamContext {
+    app: AppHandle,
+    job_id: String,
+    action: String,
+    target: String,
+    lines_seen: Arc<AtomicUsize>,
+    bytes_seen: Arc<AtomicUsize>,
+}
+
+fn stream_output<R: std::io::Read + Send + 'static>(
+    reader: R,
+    context: OutputStreamContext,
+    source: &'static str,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(reader);
+        let mut bytes = Vec::new();
+        let mut truncation_emitted = false;
+        loop {
+            bytes.clear();
+            let count = match reader.read_until(b'\n', &mut bytes) {
+                Ok(0) | Err(_) => break,
+                Ok(count) => count,
+            };
+            let line_index = context.lines_seen.fetch_add(1, Ordering::Relaxed);
+            let previous_bytes = context.bytes_seen.fetch_add(count, Ordering::Relaxed);
+            if line_index >= MAX_JOB_LOG_LINES || previous_bytes >= MAX_JOB_LOG_BYTES {
+                if !truncation_emitted {
+                    truncation_emitted = true;
+                    emit(
+                        &context.app,
+                        JobProgress {
+                            job_id: context.job_id.clone(),
+                            action: context.action.clone(),
+                            target: context.target.clone(),
+                            phase: "installing".into(),
+                            log_line: Some("日志输出过多，后续内容已省略但任务仍在运行".into()),
+                        },
+                    );
+                }
+                continue;
+            }
+            let text = String::from_utf8_lossy(&bytes).trim_end().to_string();
+            if text.is_empty() {
+                continue;
+            }
+            emit(
+                &context.app,
+                JobProgress {
+                    job_id: context.job_id.clone(),
+                    action: context.action.clone(),
+                    target: context.target.clone(),
+                    phase: "installing".into(),
+                    log_line: Some(if source == "stderr" {
+                        format!("[stderr] {text}")
+                    } else {
+                        text
+                    }),
+                },
+            );
+        }
+    })
+}
+
+fn validate_job_id(job_id: &str) -> Result<(), String> {
+    if job_id.is_empty()
+        || job_id.len() > 80
+        || !job_id.chars().all(|character| {
+            character.is_ascii_alphanumeric() || character == '-' || character == '_'
+        })
+    {
+        Err("无效的任务 ID".into())
+    } else {
+        Ok(())
+    }
+}
+
+pub fn cancel_job(job_id: &str) -> Result<bool, String> {
+    validate_job_id(job_id)?;
+    let pid = running_jobs()
+        .lock()
+        .map_err(|_| "任务表锁已损坏".to_string())?
+        .get(job_id)
+        .copied();
+    let Some(pid) = pid else {
+        return Ok(false);
+    };
+    cancelled_jobs()
+        .lock()
+        .map_err(|_| "取消状态锁已损坏".to_string())?
+        .insert(job_id.to_string());
+    #[cfg(windows)]
+    {
+        let mut command = Command::new("taskkill.exe");
+        command.args(["/PID", &pid.to_string(), "/T", "/F"]);
+        no_window(&mut command);
+        let status = command
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map_err(|error| format!("无法终止任务: {error}"));
+        let status = match status {
+            Ok(status) => status,
+            Err(error) => {
+                if let Ok(mut jobs) = cancelled_jobs().lock() {
+                    jobs.remove(job_id);
+                }
+                return Err(error);
+            }
+        };
+        if !status.success() {
+            if let Ok(mut jobs) = cancelled_jobs().lock() {
+                jobs.remove(job_id);
+            }
+            return Err("任务终止命令执行失败".into());
+        }
+    }
+    #[cfg(not(windows))]
+    return Err("任务取消仅支持 Windows".into());
+    Ok(true)
+}
+
 /// 在后台线程执行命令并把输出以事件流式回传
 fn spawn_stream(
     app: AppHandle,
@@ -355,6 +675,9 @@ fn spawn_stream(
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
+                if action == "install" {
+                    let _ = update_install_status(&job_id, "failed");
+                }
                 emit(
                     &app,
                     JobProgress {
@@ -368,28 +691,55 @@ fn spawn_stream(
                 return;
             }
         };
-
-        if let Some(out) = child.stdout.take() {
-            let reader = BufReader::new(out);
-            for line in reader.lines().map_while(Result::ok) {
-                emit(
-                    &app,
-                    JobProgress {
-                        job_id: job_id.clone(),
-                        action: action.clone(),
-                        target: target.clone(),
-                        phase: "installing".into(),
-                        log_line: Some(line),
-                    },
-                );
-            }
+        if let Ok(mut jobs) = running_jobs().lock() {
+            jobs.insert(job_id.clone(), child.id());
         }
-
+        let output_context = OutputStreamContext {
+            app: app.clone(),
+            job_id: job_id.clone(),
+            action: action.clone(),
+            target: target.clone(),
+            lines_seen: Arc::new(AtomicUsize::new(0)),
+            bytes_seen: Arc::new(AtomicUsize::new(0)),
+        };
+        let stdout_reader = child
+            .stdout
+            .take()
+            .map(|stdout| stream_output(stdout, output_context.clone(), "stdout"));
+        let stderr_reader = child
+            .stderr
+            .take()
+            .map(|stderr| stream_output(stderr, output_context, "stderr"));
         let status = child.wait();
-        let mut err_text = String::new();
-        if let Some(mut e) = child.stderr.take() {
-            use std::io::Read;
-            let _ = e.read_to_string(&mut err_text);
+        if let Some(reader) = stdout_reader {
+            let _ = reader.join();
+        }
+        if let Some(reader) = stderr_reader {
+            let _ = reader.join();
+        }
+        if let Ok(mut jobs) = running_jobs().lock() {
+            jobs.remove(&job_id);
+        }
+        let cancelled = cancelled_jobs()
+            .lock()
+            .map(|mut jobs| jobs.remove(&job_id))
+            .unwrap_or(false);
+
+        if cancelled {
+            if action == "install" {
+                let _ = update_install_status(&job_id, "cancelled");
+            }
+            emit(
+                &app,
+                JobProgress {
+                    job_id,
+                    action,
+                    target,
+                    phase: "cancelled".into(),
+                    log_line: Some("任务已由用户取消；请运行环境体检确认没有残留".into()),
+                },
+            );
+            return;
         }
 
         match status {
@@ -421,6 +771,23 @@ fn spawn_stream(
                         return;
                     }
                 }
+                if action == "install" {
+                    if let Err(error) = update_install_status(&job_id, "installed") {
+                        emit(
+                            &app,
+                            JobProgress {
+                                job_id,
+                                action,
+                                target,
+                                phase: "error".into(),
+                                log_line: Some(format!(
+                                    "安装已完成，但所有权清单写入失败: {error}"
+                                )),
+                            },
+                        );
+                        return;
+                    }
+                }
                 win::broadcast_env_change();
                 emit(
                     &app,
@@ -434,14 +801,12 @@ fn spawn_stream(
                 );
             }
             other => {
+                if action == "install" {
+                    let _ = update_install_status(&job_id, "failed");
+                }
                 let msg = match other {
                     Ok(s) => format!("退出码 {:?}", s.code()),
                     Err(e) => e.to_string(),
-                };
-                let detail = if err_text.trim().is_empty() {
-                    msg
-                } else {
-                    format!("{} | {}", msg, err_text.trim())
                 };
                 emit(
                     &app,
@@ -450,7 +815,7 @@ fn spawn_stream(
                         action,
                         target,
                         phase: "error".into(),
-                        log_line: Some(detail),
+                        log_line: Some(msg),
                     },
                 );
             }
@@ -465,6 +830,7 @@ pub fn install_sdk(
     version: &str,
     engine: &str,
     location: &str,
+    snapshot_id: &str,
 ) -> Result<String, String> {
     if crate::sdk_scanner::kind_spec(kind).is_none() {
         return Err(format!("不支持的 SDK 类型: {kind}"));
@@ -489,17 +855,21 @@ pub fn install_sdk(
     let job_id = win::timestamp_id();
     let target = format!("{} {}", item.distro, item.version);
 
-    let (program, args) = match engine {
+    let (program, args, package_id) = match engine {
         "scoop" => {
-            let id = item.scoop_id.ok_or("该版本不支持 scoop")?;
-            ("scoop".to_string(), vec!["install".to_string(), id])
+            let id = item.scoop_id.clone().ok_or("该版本不支持 scoop")?;
+            (
+                "scoop".to_string(),
+                vec!["install".to_string(), id.clone()],
+                id.clone(),
+            )
         }
         "winget" => {
-            let id = item.winget_id.ok_or("该版本不支持 winget")?;
+            let id = item.winget_id.clone().ok_or("该版本不支持 winget")?;
             let mut args = vec![
                 "install".to_string(),
                 "--id".to_string(),
-                id,
+                id.clone(),
                 "-e".to_string(),
                 "--accept-source-agreements".to_string(),
                 "--accept-package-agreements".to_string(),
@@ -509,10 +879,30 @@ pub fn install_sdk(
                 args.push("--location".to_string());
                 args.push(location.trim().to_string());
             }
-            ("winget".to_string(), args)
+            ("winget".to_string(), args, id)
         }
         _ => unreachable!("engine validated above"),
     };
+
+    let previous_homes = crate::sdk_scanner::scan_kind(kind)
+        .into_iter()
+        .map(|version| version.home)
+        .collect();
+    record_install_started(ManagedInstall {
+        id: format!("install-{}", job_id.trim_start_matches("snap-")),
+        job_id: job_id.clone(),
+        snapshot_id: snapshot_id.into(),
+        kind: kind.into(),
+        distro: item.distro.clone(),
+        version: item.version.clone(),
+        engine: engine.into(),
+        package_id,
+        requested_location: location.trim().into(),
+        previous_homes,
+        detected_homes: Vec::new(),
+        status: "running".into(),
+        installed_at: win::now_string(),
+    })?;
 
     snapshot::audit("install", &target);
     spawn_stream(
@@ -703,6 +1093,38 @@ pub fn uninstall_sdk(app: AppHandle, kind: &str, home: &str) -> Result<String, S
     let kind_owned = kind.to_string();
     snapshot::audit("uninstall", home);
 
+    if let Some(record) = managed_install_for_home(kind, home)? {
+        let program = record.engine.clone();
+        let args = if record.engine == "winget" {
+            vec![
+                "uninstall".into(),
+                "--id".into(),
+                record.package_id.clone(),
+                "-e".into(),
+                "--accept-source-agreements".into(),
+            ]
+        } else if record.engine == "scoop" {
+            vec!["uninstall".into(), record.package_id.clone()]
+        } else {
+            return Err(format!("安装记录包含不支持的引擎: {}", record.engine));
+        };
+        let record_id = record.id;
+        let callback: Box<dyn FnOnce() -> Result<(), String> + Send> = Box::new(move || {
+            cleanup_env_for_home(&kind_owned, &home_owned)?;
+            update_install_record_status(&record_id, "uninstalled")
+        });
+        spawn_stream(
+            app,
+            job_id.clone(),
+            "uninstall".into(),
+            target,
+            program,
+            args,
+            Some(callback),
+        );
+        return Ok(job_id);
+    }
+
     let home_l = home.to_lowercase();
     if home_l.contains("\\scoop\\apps\\") {
         // Scoop 应用：交给 scoop 卸载（本就干净）
@@ -820,5 +1242,24 @@ mod tests {
     #[test]
     fn unknown_kind_returns_empty_catalog() {
         assert!(catalog("unknown-tool").is_empty());
+    }
+
+    #[test]
+    fn job_ids_are_strictly_validated_before_cancellation() {
+        assert!(validate_job_id("snap-20260716_123456-7").is_ok());
+        assert!(validate_job_id("").is_err());
+        assert!(validate_job_id("../other-process").is_err());
+        assert!(validate_job_id("job id").is_err());
+        assert!(validate_job_id(&"a".repeat(81)).is_err());
+    }
+
+    #[test]
+    fn install_manifest_schema_is_stable_and_rejects_future_versions() {
+        let current: InstallManifest = serde_json::from_str(r#"{"installs":[]}"#).unwrap();
+        assert_eq!(current.schema_version, manifest_schema_version());
+
+        let future: InstallManifest =
+            serde_json::from_str(r#"{"schemaVersion":99,"installs":[]}"#).unwrap();
+        assert!(validate_manifest_schema(&future).is_err());
     }
 }

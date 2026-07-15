@@ -58,7 +58,14 @@ export interface JobProgress {
   jobId: string;
   action: "install" | "uninstall";
   target: string;
-  phase: "downloading" | "installing" | "configuring" | "cleaning" | "done" | "error";
+  phase:
+    | "downloading"
+    | "installing"
+    | "configuring"
+    | "cleaning"
+    | "done"
+    | "error"
+    | "cancelled";
   logLine?: string;
 }
 
@@ -87,6 +94,11 @@ export interface SnapshotPreview {
   requiresElevation: boolean;
 }
 
+export interface SnapshotSelection {
+  scope: "system" | "user";
+  name: string;
+}
+
 export interface AuditEntry {
   time: string;
   action: string;
@@ -99,6 +111,10 @@ export interface HealthReport {
   duplicatePaths: number;
   conflicts: number;
   pathLength: number;
+  unresolvedPaths: number;
+  networkPaths: number;
+  snapshotIssues: number;
+  incompleteInstalls: number;
   issues: string[];
 }
 
@@ -113,15 +129,35 @@ export interface ImportPreview {
   systemCount: number;
   sensitiveCount: number;
   requiresElevation: boolean;
+  changes: SnapshotChange[];
 }
 
 export interface ProjectVersionHint {
   tool: string;
   version: string;
   source: string;
+  status: "current" | "installed" | "missing" | "wrapper" | "declared";
+  installedHome?: string;
+  currentVersion?: string;
 }
 
 export interface ProjectInspection {
   path: string;
   hints: ProjectVersionHint[];
+}
+
+export interface ManagedInstall {
+  id: string;
+  jobId: string;
+  snapshotId: string;
+  kind: SdkKind;
+  distro: string;
+  version: string;
+  engine: "winget" | "scoop";
+  packageId: string;
+  requestedLocation: string;
+  previousHomes: string[];
+  detectedHomes: string[];
+  status: "running" | "installed" | "failed" | "cancelled" | "uninstalled";
+  installedAt: string;
 }

@@ -29,7 +29,7 @@ fn smoke_engine_status() {
 
 #[test]
 fn smoke_list_snapshots() {
-    let _ = envbox_lib::snapshot::list_snapshots();
+    let _ = envbox_lib::snapshot::list_snapshots().expect("快照目录应可读取");
 }
 
 #[test]

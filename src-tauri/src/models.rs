@@ -103,7 +103,7 @@ pub struct JobProgress {
     pub job_id: String,
     pub action: String, // "install" | "uninstall"
     pub target: String,
-    pub phase: String, // downloading|installing|configuring|cleaning|done|error
+    pub phase: String, // downloading|installing|configuring|cleaning|done|error|cancelled
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log_line: Option<String>,
 }
@@ -143,6 +143,13 @@ pub struct SnapshotPreview {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SnapshotSelection {
+    pub scope: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuditEntry {
     pub time: String,
     pub action: String,
@@ -157,6 +164,10 @@ pub struct HealthReport {
     pub duplicate_paths: usize,
     pub conflicts: usize,
     pub path_length: usize,
+    pub unresolved_paths: usize,
+    pub network_paths: usize,
+    pub snapshot_issues: usize,
+    pub incomplete_installs: usize,
     pub issues: Vec<String>,
 }
 
@@ -175,6 +186,7 @@ pub struct ImportPreview {
     pub system_count: usize,
     pub sensitive_count: usize,
     pub requires_elevation: bool,
+    pub changes: Vec<SnapshotChange>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -183,6 +195,12 @@ pub struct ProjectVersionHint {
     pub tool: String,
     pub version: String,
     pub source: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub installed_home: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,6 +208,26 @@ pub struct ProjectVersionHint {
 pub struct ProjectInspection {
     pub path: String,
     pub hints: Vec<ProjectVersionHint>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedInstall {
+    pub id: String,
+    pub job_id: String,
+    pub snapshot_id: String,
+    pub kind: String,
+    pub distro: String,
+    pub version: String,
+    pub engine: String,
+    pub package_id: String,
+    pub requested_location: String,
+    #[serde(default)]
+    pub previous_homes: Vec<String>,
+    #[serde(default)]
+    pub detected_homes: Vec<String>,
+    pub status: String,
+    pub installed_at: String,
 }
 
 #[cfg(test)]

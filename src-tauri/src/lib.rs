@@ -104,9 +104,9 @@ fn install_sdk(
     engine: String,
     location: String,
 ) -> CommandResult<String> {
-    require_snapshot(&format!("安装 {} {} {} 前", kind, distro, version))?;
+    let backup = require_snapshot(&format!("安装 {} {} {} 前", kind, distro, version))?;
     command(installer::install_sdk(
-        app, &kind, &distro, &version, &engine, &location,
+        app, &kind, &distro, &version, &engine, &location, &backup.id,
     ))
 }
 
@@ -116,6 +116,16 @@ fn uninstall_sdk(app: AppHandle, kind: String, home: String) -> CommandResult<St
     command(installer::uninstall_sdk(app, &kind, &home))
 }
 
+#[tauri::command]
+fn cancel_job(job_id: String) -> CommandResult<bool> {
+    command(installer::cancel_job(&job_id))
+}
+
+#[tauri::command]
+fn list_managed_installs() -> CommandResult<Vec<ManagedInstall>> {
+    command(installer::list_managed_installs())
+}
+
 // ── 快照 / 审计 ───────────────────────────────────────────
 #[tauri::command]
 fn create_snapshot(description: String) -> CommandResult<Snapshot> {
@@ -123,8 +133,8 @@ fn create_snapshot(description: String) -> CommandResult<Snapshot> {
 }
 
 #[tauri::command]
-fn list_snapshots() -> Vec<Snapshot> {
-    snapshot::list_snapshots()
+fn list_snapshots() -> CommandResult<Vec<Snapshot>> {
+    command(snapshot::list_snapshots())
 }
 
 #[tauri::command]
@@ -138,18 +148,23 @@ fn restore_snapshot(id: String) -> CommandResult<()> {
 }
 
 #[tauri::command]
+fn restore_snapshot_selected(id: String, selections: Vec<SnapshotSelection>) -> CommandResult<()> {
+    command(snapshot::restore_snapshot_selected(&id, selections))
+}
+
+#[tauri::command]
 fn delete_snapshot(id: String) -> CommandResult<()> {
     command(snapshot::delete_snapshot(&id))
 }
 
 #[tauri::command]
-fn prune_snapshots(days: u64) -> usize {
-    snapshot::prune_snapshots(days)
+fn prune_snapshots(days: u64) -> CommandResult<usize> {
+    command(snapshot::prune_snapshots(days))
 }
 
 #[tauri::command]
-fn list_audit() -> Vec<AuditEntry> {
-    snapshot::list_audit()
+fn list_audit() -> CommandResult<Vec<AuditEntry>> {
+    command(snapshot::list_audit())
 }
 
 // ── 其它 ─────────────────────────────────────────────────
@@ -177,6 +192,21 @@ fn export_vars(path: String) -> CommandResult<()> {
 fn import_vars(path: String) -> CommandResult<usize> {
     let backup = require_snapshot("导入环境变量前")?;
     match misc::import_vars(&path) {
+        Ok(count) => Ok(count),
+        Err(error) => {
+            let rollback = match snapshot::restore_snapshot(&backup.id) {
+                Ok(()) => "已自动恢复导入前状态".to_string(),
+                Err(rollback) => format!("自动回滚失败: {rollback}"),
+            };
+            Err(AppError::from(format!("导入失败: {error}；{rollback}")))
+        }
+    }
+}
+
+#[tauri::command]
+fn import_vars_selected(path: String, selections: Vec<SnapshotSelection>) -> CommandResult<usize> {
+    let backup = require_snapshot("选择性导入环境变量前")?;
+    match misc::import_vars_selected(&path, selections) {
         Ok(count) => Ok(count),
         Err(error) => {
             let rollback = match snapshot::restore_snapshot(&backup.id) {
@@ -233,10 +263,13 @@ pub fn run() {
             engine_status,
             install_sdk,
             uninstall_sdk,
+            cancel_job,
+            list_managed_installs,
             create_snapshot,
             list_snapshots,
             preview_snapshot_restore,
             restore_snapshot,
+            restore_snapshot_selected,
             delete_snapshot,
             prune_snapshots,
             list_audit,
@@ -246,6 +279,7 @@ pub fn run() {
             export_vars,
             preview_import,
             import_vars,
+            import_vars_selected,
             is_elevated,
             relaunch_as_admin
         ])

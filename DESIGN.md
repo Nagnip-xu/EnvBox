@@ -145,13 +145,14 @@ EnvBox 不自己造下载器，而是做「**编排器（orchestrator）**」，
 
 ### 4.4 快照与回滚（安全网）
 - **任何写操作前自动创建快照**（时间戳 + 操作描述）。
-- 快照内容：系统变量 + 用户变量完整 JSON。
-- 支持：查看快照列表、Diff 对比、一键恢复到某快照、手动打快照。
+- 快照内容：系统变量 + 用户变量完整 JSON，并记录 schema 与应用版本；两个作用域必须都完整读取成功。
+- 支持：查看快照列表、Diff 对比、选择部分变量恢复、一键完整恢复、手动打快照；恢复失败时自动回滚。
 - 快照存于 `%AppData%\EnvBox\snapshots\`。
+- 快照不加密，但应用数据目录会收紧 Windows ACL；损坏、未来 schema 和 ID 不一致的文件会被拒绝。
 
 ### 4.5 导入 / 导出
 - 导出：全部或选定变量 → `.json` / `.env` / `.reg`。
-- 导入：从文件导入，预览差异后再应用。
+- 导入：从文件导入，预览新增/修改差异并选择具体变量后再应用；系统级选择仍需提权。
 
 ### 4.6 一键下载安装（核心亮点）
 把「下载→安装→配环境变量」压缩成一次点击。
@@ -159,7 +160,7 @@ EnvBox 不自己造下载器，而是做「**编排器（orchestrator）**」，
 - **内置版本目录**：进入某语言（如 JDK），列出可安装版本（发行版 + 版本号，如 Temurin 8/11/17/21、GraalVM 等），标注是否 LTS、大小、来源引擎。
 - **选择安装引擎**：默认自动选择（优先 winget，其次 scoop，最后直连）；高级用户可手动指定。
 - **一次授权**：若需管理员（winget 机器级 / choco），仅弹一次 UAC；scoop / 直连解压到用户目录则无需提权。
-- **实时进度**：后台执行命令，通过 Tauri event 把 stdout/进度流式回传到界面，展示进度条 + 日志（可展开）。
+- **实时进度**：后台并发读取 stdout/stderr，通过 Tauri event 把进度流式回传到界面；日志有行数/字节上限，可跟踪的子进程任务支持取消并终止进程树。
 - **装完即配**：安装成功后自动：
   1. 登记该版本到 SDK 列表；
   2. 询问「是否设为当前版本」，是则顺带执行 4.3 的切换逻辑（设 `*_HOME` + 调 PATH + 广播）。
@@ -170,7 +171,7 @@ EnvBox 不自己造下载器，而是做「**编排器（orchestrator）**」，
 删除得干净，是本工具区别于手动删文件夹的关键。
 
 - **卸载单个版本**：
-  1. 用对应引擎卸载（`winget uninstall` / `scoop uninstall`），或删除受管目录；
+  1. 优先根据原子持久化的安装归属清单，使用原始包 ID 调用对应引擎卸载（`winget uninstall` / `scoop uninstall`）；
   2. **联动清理**：扫描并移除指向该版本的 PATH 条目、以及仅为它服务的环境变量（如该 JDK 是当前 `JAVA_HOME` 指向对象时，提示改指其它版本或清空）；
   3. 更新 SDK 列表，广播刷新。
 - **卸载整套环境**：一键移除某语言的**所有**已管理版本及相关变量（二次确认 + 快照）。
@@ -278,7 +279,7 @@ interface JobProgress {
   jobId: string;
   action: 'install' | 'uninstall';
   target: string;          // "Temurin JDK 17"
-  phase: 'downloading' | 'installing' | 'configuring' | 'cleaning' | 'done' | 'error';
+  phase: 'downloading' | 'installing' | 'configuring' | 'cleaning' | 'cancelled' | 'done' | 'error';
   percent?: number;
   logLine?: string;
 }

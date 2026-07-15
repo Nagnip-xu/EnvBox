@@ -27,7 +27,7 @@ export default function Settings() {
   const [engines, setEngines] = useState<EngineStatus | null>(null);
   const [report, setReport] = useState<HealthReport | null>(null);
   const [checking, setChecking] = useState(false);
-  const { pushToast, lang, setLang, theme, setTheme, installPath, setInstallPath, t, refreshKey } =
+  const { pushToast, lang, setLang, theme, setTheme, installPath, setInstallPath, setPage, t, refreshKey } =
     useStore();
   const [mirror, setMirror] = useState(() => localStorage.getItem("envbox.mirror") ?? "rsproxy");
   const [pathDraft, setPathDraft] = useState(installPath);
@@ -150,6 +150,12 @@ export default function Settings() {
               <Metric label={t("settings.health.dup")} value={report.duplicatePaths} warn={report.duplicatePaths > 0} />
               <Metric label={t("settings.health.conflict")} value={report.conflicts} warn={report.conflicts > 0} />
             </div>
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <Metric label={t("settings.health.unresolved")} value={report.unresolvedPaths} warn={report.unresolvedPaths > 0} />
+              <Metric label={t("settings.health.network")} value={report.networkPaths} warn={report.networkPaths > 0} />
+              <Metric label={t("settings.health.snapshots")} value={report.snapshotIssues} bad={report.snapshotIssues > 0} />
+              <Metric label={t("settings.health.installs")} value={report.incompleteInstalls} bad={report.incompleteInstalls > 0} />
+            </div>
             <ul className="mt-2 space-y-1">
               {report.issues.map((issue, i) => (
                 <li key={i} className="text-sm text-neutral-300">
@@ -227,7 +233,25 @@ export default function Settings() {
                   <div key={`${hint.tool}-${hint.source}`} className="flex items-center gap-3 px-3 py-2.5">
                     <span className="w-28 shrink-0 text-sm font-medium text-neutral-200">{hint.tool}</span>
                     <code className="min-w-0 flex-1 truncate text-sm text-brand-300">{hint.version}</code>
+                    <span
+                      className={`tag ${
+                        hint.status === "current"
+                          ? "tag-emerald"
+                          : hint.status === "missing"
+                            ? "tag-rose"
+                            : hint.status === "installed"
+                              ? "tag-amber"
+                              : "bg-neutral-800 text-neutral-400"
+                      }`}
+                    >
+                      {t(`settings.project.status.${hint.status}`)}
+                    </span>
                     <span className="font-mono text-xs text-neutral-500">{hint.source}</span>
+                    {hint.status === "missing" && (
+                      <button className="btn-ghost !py-1" onClick={() => setPage("sdk")}>
+                        {t("nav.sdk")}
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
