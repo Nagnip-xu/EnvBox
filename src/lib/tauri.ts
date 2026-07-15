@@ -7,9 +7,11 @@ import type {
   ImportPreview,
   JobProgress,
   PathEntry,
+  ProjectInspection,
   SdkKind,
   SdkVersion,
   Snapshot,
+  SnapshotPreview,
 } from "../types";
 import { mockEnvVars, mockPathEntries, mockSdks, mockSnapshots } from "./mock";
 
@@ -46,6 +48,20 @@ export const api = {
   async listSnapshots(): Promise<Snapshot[]> {
     return isTauri() ? invoke("list_snapshots") : mockSnapshots;
   },
+  async previewSnapshotRestore(id: string): Promise<SnapshotPreview> {
+    if (!isTauri()) {
+      return {
+        snapshotId: id,
+        description: mockSnapshots.find((snapshot) => snapshot.id === id)?.description ?? id,
+        createdAt: mockSnapshots.find((snapshot) => snapshot.id === id)?.createdAt ?? "",
+        changes: [],
+        userChanges: 0,
+        systemChanges: 0,
+        requiresElevation: false,
+      };
+    }
+    return invoke("preview_snapshot_restore", { id });
+  },
   async listAudit(): Promise<AuditEntry[]> {
     return isTauri() ? invoke("list_audit") : [];
   },
@@ -71,6 +87,18 @@ export const api = {
         issues: ["浏览器预览：这是演示数据"],
       };
     return invoke("health_check");
+  },
+  async inspectProject(path: string): Promise<ProjectInspection> {
+    if (!isTauri()) {
+      return {
+        path,
+        hints: [
+          { tool: "Node.js", version: "22", source: ".nvmrc" },
+          { tool: "Python", version: "3.12", source: ".python-version" },
+        ],
+      };
+    }
+    return invoke("inspect_project", { path });
   },
 
   // 写入
@@ -159,6 +187,13 @@ export function errorMessage(error: unknown): string {
     return String((error as { message: unknown }).message);
   }
   return String(error ?? "Unknown error");
+}
+
+export function errorCode(error: unknown): string | undefined {
+  if (error && typeof error === "object" && "code" in error) {
+    return String((error as { code: unknown }).code);
+  }
+  return undefined;
 }
 
 /** 订阅安装/卸载进度事件，返回取消订阅函数 */

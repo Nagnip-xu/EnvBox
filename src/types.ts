@@ -13,6 +13,8 @@ export interface PathEntry {
   resolved: string;
   scope: "system" | "user";
   exists: boolean;
+  status: "available" | "missing" | "unresolved" | "networkUnavailable";
+  safeToClean: boolean;
   duplicate: boolean;
   sdkTag?: string;
   enabled: boolean;
@@ -39,6 +41,7 @@ export interface SdkVersion {
   home: string;
   isCurrent: boolean;
   source: "scan" | "manual" | "envbox";
+  manager?: string;
 }
 
 export interface InstallableVersion {
@@ -63,6 +66,25 @@ export interface Snapshot {
   id: string;
   createdAt: string;
   description: string;
+}
+
+export interface SnapshotChange {
+  scope: "system" | "user";
+  name: string;
+  kind: "add" | "modify" | "delete";
+  before?: string;
+  after?: string;
+  sensitive: boolean;
+}
+
+export interface SnapshotPreview {
+  snapshotId: string;
+  description: string;
+  createdAt: string;
+  changes: SnapshotChange[];
+  userChanges: number;
+  systemChanges: number;
+  requiresElevation: boolean;
 }
 
 export interface AuditEntry {
@@ -91,4 +113,15 @@ export interface ImportPreview {
   systemCount: number;
   sensitiveCount: number;
   requiresElevation: boolean;
+}
+
+export interface ProjectVersionHint {
+  tool: string;
+  version: string;
+  source: string;
+}
+
+export interface ProjectInspection {
+  path: string;
+  hints: ProjectVersionHint[];
 }

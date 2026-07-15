@@ -8,14 +8,17 @@ import {
   Sparkles,
   Layers,
   GripVertical,
+  CircleHelp,
+  WifiOff,
 } from "lucide-react";
 import type { PathEntry } from "../types";
-import { api, errorMessage } from "../lib/tauri";
+import { api, errorCode, errorMessage } from "../lib/tauri";
 import { useStore } from "../store/useStore";
 import ConfirmModal from "../components/ConfirmModal";
 
 export default function PathManager() {
   const [entries, setEntries] = useState<PathEntry[]>([]);
+  const [loading, setLoading] = useState(true);
   const { search, refreshKey, bumpRefresh, pushToast, t } = useStore();
   const [delIdx, setDelIdx] = useState<number | null>(null);
   const [confirmAction, setConfirmAction] = useState<null | "clean" | "dedupe">(null);
@@ -23,8 +26,17 @@ export default function PathManager() {
   const [overIdx, setOverIdx] = useState<number | null>(null);
 
   useEffect(() => {
-    api.getPathEntries().then(setEntries);
-  }, [refreshKey]);
+    let cancelled = false;
+    setLoading(true);
+    api
+      .getPathEntries()
+      .then((items) => !cancelled && setEntries(items))
+      .catch((error) => !cancelled && pushToast(t("common.loadFail", { err: errorMessage(error) }), "error"))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey, pushToast, t]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -38,7 +50,7 @@ export default function PathManager() {
     let dup = 0;
     let totalLen = 0;
     entries.forEach((e, i) => {
-      if (!e.exists) invalid++;
+      if (e.safeToClean) invalid++;
       if (e.duplicate) dup++;
       totalLen += e.raw.length + (i > 0 ? 1 : 0);
     });
@@ -51,17 +63,17 @@ export default function PathManager() {
     label: string
   ) {
     let total = 0;
-    const errs: string[] = [];
+    const errs: { scope: string; error: unknown }[] = [];
     for (const scope of ["user", "system"]) {
       try {
         total += await fn(scope);
       } catch (e) {
-        errs.push(`${scope}: ${errorMessage(e)}`);
+        errs.push({ scope, error: e });
       }
     }
     if (total > 0) pushToast(t("path.toast.done", { label, n: total }), "success");
     else pushToast(t("path.toast.none", { label }), "info");
-    if (errs.some((m) => isPermErr(m))) {
+    if (errs.some(({ error }) => isPermErr(error))) {
       pushToast(t("path.sysPermErrShort"), "error", {
         label: t("settings.perm.relaunch"),
         onClick: relaunchAdmin,
@@ -72,8 +84,11 @@ export default function PathManager() {
     bumpRefresh();
   }
 
-  function isPermErr(msg: string): boolean {
-    return /os error 5|拒绝访问|denied/i.test(msg);
+  function isPermErr(error: unknown): boolean {
+    return (
+      errorCode(error) === "PERMISSION_DENIED" ||
+      /os error 5|拒绝访问|denied/i.test(errorMessage(error))
+    );
   }
 
   async function relaunchAdmin() {
@@ -86,7 +101,7 @@ export default function PathManager() {
 
   function reportScopeErr(scope: string, e: unknown, prefix: string) {
     const msg = errorMessage(e);
-    if (scope === "system" && isPermErr(msg)) {
+    if (scope === "system" && isPermErr(e)) {
       pushToast(t("path.sysPermErr"), "error", {
         label: t("settings.perm.relaunch"),
         onClick: relaunchAdmin,
@@ -199,14 +214,18 @@ export default function PathManager() {
             ) : (
               <span className="w-[15px] shrink-0" />
             )}
-            {e.exists ? (
+            {e.status === "available" ? (
               <CheckCircle2 size={16} className="shrink-0 text-emerald-400" />
+            ) : e.status === "unresolved" ? (
+              <CircleHelp size={16} className="shrink-0 text-amber-400" />
+            ) : e.status === "networkUnavailable" ? (
+              <WifiOff size={16} className="shrink-0 text-neutral-500" />
             ) : (
               <XCircle size={16} className="shrink-0 text-rose-400" />
             )}
             <span
               className={`min-w-0 flex-1 truncate font-mono text-sm ${
-                e.exists ? "text-neutral-300" : "text-rose-400/80 line-through"
+                e.status === "missing" ? "text-rose-400/80 line-through" : "text-neutral-300"
               }`}
               title={e.resolved}
             >
@@ -218,6 +237,10 @@ export default function PathManager() {
                 <Tag size={11} /> {e.sdkTag}
               </span>
             )}
+            {e.status === "unresolved" && <span className="tag tag-amber">{t("path.status.unresolved")}</span>}
+            {e.status === "networkUnavailable" && (
+              <span className="tag bg-neutral-800 text-neutral-400">{t("path.status.network")}</span>
+            )}
             {e.duplicate && (
               <span className="tag tag-amber">
                 <Copy size={11} /> {t("path.dupBadge")}
@@ -227,7 +250,7 @@ export default function PathManager() {
               {e.scope === "system" ? t("scope.system.short") : t("scope.user.short")}
             </span>
             <button
-              className="btn-ghost !px-2 opacity-0 transition-opacity hover:!text-rose-400 group-hover:opacity-100"
+              className="btn-ghost !px-2 opacity-0 transition-opacity hover:!text-rose-400 group-focus-within:opacity-100 group-hover:opacity-100"
               title={t("common.delete")}
               aria-label={t("common.delete")}
               onClick={() => setDelIdx(i)}
@@ -236,7 +259,10 @@ export default function PathManager() {
             </button>
           </div>
         ))}
-        {filtered.length === 0 && (
+        {loading && (
+          <div className="px-4 py-6 text-center text-sm text-neutral-500">{t("common.loading")}</div>
+        )}
+        {!loading && filtered.length === 0 && (
           <div className="px-4 py-6 text-center text-sm text-neutral-600">{t("path.noMatch")}</div>
         )}
       </div>

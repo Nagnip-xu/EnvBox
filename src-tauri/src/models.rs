@@ -1,5 +1,50 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppError {
+    pub code: String,
+    pub message: String,
+}
+
+impl From<String> for AppError {
+    fn from(message: String) -> Self {
+        let lower = message.to_lowercase();
+        let code = if message.contains("快照")
+            && (message.contains("失败") || message.contains("损坏"))
+        {
+            "SNAPSHOT_FAILED"
+        } else if message.contains("拒绝访问")
+            || lower.contains("permission")
+            || lower.contains("denied")
+            || lower.contains("os error 5")
+            || message.contains("管理员权限")
+        {
+            "PERMISSION_DENIED"
+        } else if message.contains("管理。为避免") || message.contains("版本管理器") {
+            "EXTERNAL_MANAGER"
+        } else if message.contains("找不到") || message.contains("不存在") {
+            "NOT_FOUND"
+        } else if message.contains("不支持")
+            || message.contains("无效")
+            || message.contains("不能为空")
+            || message.contains("非法")
+            || message.contains("超过")
+            || message.contains("必须")
+        {
+            "INVALID_INPUT"
+        } else {
+            "OPERATION_FAILED"
+        };
+        Self {
+            code: code.into(),
+            message,
+        }
+    }
+}
+
+pub type CommandResult<T> = Result<T, AppError>;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvVar {
@@ -18,6 +63,8 @@ pub struct PathEntry {
     pub resolved: String,
     pub scope: String, // "system" | "user"
     pub exists: bool,
+    pub status: String, // "available" | "missing" | "unresolved" | "networkUnavailable"
+    pub safe_to_clean: bool,
     pub duplicate: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sdk_tag: Option<String>,
@@ -32,6 +79,8 @@ pub struct SdkVersion {
     pub home: String,
     pub is_current: bool,
     pub source: String, // "scan" | "manual" | "envbox"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manager: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,6 +118,31 @@ pub struct Snapshot {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SnapshotChange {
+    pub scope: String,
+    pub name: String,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
+    pub sensitive: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotPreview {
+    pub snapshot_id: String,
+    pub description: String,
+    pub created_at: String,
+    pub changes: Vec<SnapshotChange>,
+    pub user_changes: usize,
+    pub system_changes: usize,
+    pub requires_elevation: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuditEntry {
     pub time: String,
     pub action: String,
@@ -101,4 +175,37 @@ pub struct ImportPreview {
     pub system_count: usize,
     pub sensitive_count: usize,
     pub requires_elevation: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectVersionHint {
+    pub tool: String,
+    pub version: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectInspection {
+    pub path: String,
+    pub hints: Vec<ProjectVersionHint>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classifies_command_errors() {
+        assert_eq!(
+            AppError::from("拒绝访问".to_string()).code,
+            "PERMISSION_DENIED"
+        );
+        assert_eq!(
+            AppError::from("安全快照创建失败".to_string()).code,
+            "SNAPSHOT_FAILED"
+        );
+        assert_eq!(AppError::from("目录不存在".to_string()).code, "NOT_FOUND");
+    }
 }

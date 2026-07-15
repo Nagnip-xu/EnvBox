@@ -397,6 +397,26 @@ fn version_of(spec: &KindSpec, exe: &Path) -> String {
         .replace('"', "")
 }
 
+fn manager_for(kind: &str, home: &str) -> Option<String> {
+    let path = home.replace('/', "\\").to_ascii_lowercase();
+    let manager = match kind {
+        "node" if path.contains("\\nvm\\") || path.contains("\\nvm-windows\\") => "nvm",
+        "node" if path.contains("\\.fnm\\") || path.contains("\\fnm\\node-versions\\") => "fnm",
+        "node" if path.contains("\\.volta\\") || path.contains("\\volta\\tools\\") => "Volta",
+        "python"
+            if path.contains("\\conda\\")
+                || path.contains("\\anaconda")
+                || path.contains("\\miniconda") =>
+        {
+            "Conda"
+        }
+        "rust" if path.contains("\\.cargo") || path.contains("\\.rustup") => "rustup",
+        "jdk" if path.contains("\\.jabba\\") => "Jabba",
+        _ => return None,
+    };
+    Some(manager.into())
+}
+
 /// 汇总所有可能的 home 目录：固定候选位置 + home 环境变量 + PATH 中实际生效目录
 fn collect_home_candidates(spec: &KindSpec) -> Vec<PathBuf> {
     let mut homes: Vec<PathBuf> = candidate_roots(spec.kind);
@@ -451,6 +471,7 @@ pub fn scan_kind(kind: &str) -> Vec<SdkVersion> {
                 continue;
             }
             let version = version_of(&spec, &exe);
+            let manager = manager_for(kind, &home_str);
             let is_current = if let Some(hv) = &home_var_val {
                 hv.to_lowercase().trim_end_matches('\\') == key
             } else {
@@ -462,6 +483,7 @@ pub fn scan_kind(kind: &str) -> Vec<SdkVersion> {
                 home: home_str,
                 is_current,
                 source: "scan".into(),
+                manager,
             });
         }
     }
@@ -546,6 +568,11 @@ pub fn switch_sdk(kind: &str, home: &str) -> Result<String, String> {
     if home_has_exe(&spec, home_path).is_none() {
         return Err(format!("目录中未找到 {}，已取消切换", spec.exe));
     }
+    if let Some(manager) = manager_for(kind, home) {
+        return Err(format!(
+            "该版本由 {manager} 管理。为避免破坏其链接和状态，请使用 {manager} 完成版本切换"
+        ));
+    }
 
     let home_trim = home.trim_end_matches('\\');
     let mut new_front: Vec<String> = Vec::new();
@@ -626,5 +653,18 @@ mod tests {
         let spec = kind_spec("jdk").unwrap();
         assert_eq!(spec.home_var, Some("JAVA_HOME"));
         assert_eq!(spec.exe, "java.exe");
+    }
+
+    #[test]
+    fn detects_external_version_managers() {
+        assert_eq!(
+            manager_for("node", "C:\\Users\\me\\nvm\\v22"),
+            Some("nvm".into())
+        );
+        assert_eq!(
+            manager_for("rust", "C:\\Users\\me\\.cargo"),
+            Some("rustup".into())
+        );
+        assert_eq!(manager_for("jdk", "C:\\Java\\jdk-21"), None);
     }
 }

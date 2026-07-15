@@ -9,13 +9,21 @@ import SdkCenter from "./pages/SdkCenter";
 import Snapshots from "./pages/Snapshots";
 import Settings from "./pages/Settings";
 import { useStore } from "./store/useStore";
+import type { PageId } from "./store/useStore";
 
 export default function App() {
   const page = useStore((s) => s.page);
-  const [sdkMounted, setSdkMounted] = useState(false);
+  const [mountedPages, setMountedPages] = useState<Set<PageId>>(
+    () => new Set<PageId>(["dashboard"])
+  );
 
   useEffect(() => {
-    if (page === "sdk") setSdkMounted(true);
+    setMountedPages((current) => {
+      if (current.has(page)) return current;
+      const next = new Set(current);
+      next.add(page);
+      return next;
+    });
   }, [page]);
 
   useEffect(() => {
@@ -55,20 +63,26 @@ export default function App() {
           <div hidden={page !== "dashboard"}>
             <Dashboard />
           </div>
-          <div hidden={page !== "path"}>
-            <PathManager />
-          </div>
-          {sdkMounted && (
+          {mountedPages.has("path") && (
+            <div hidden={page !== "path"}>
+              <PathManager />
+            </div>
+          )}
+          {mountedPages.has("sdk") && (
             <div hidden={page !== "sdk"}>
               <SdkCenter />
             </div>
           )}
-          <div hidden={page !== "snapshots"}>
-            <Snapshots />
-          </div>
-          <div hidden={page !== "settings"}>
-            <Settings />
-          </div>
+          {mountedPages.has("snapshots") && (
+            <div hidden={page !== "snapshots"}>
+              <Snapshots />
+            </div>
+          )}
+          {mountedPages.has("settings") && (
+            <div hidden={page !== "settings"}>
+              <Settings />
+            </div>
+          )}
         </main>
       </div>
       <Toaster />

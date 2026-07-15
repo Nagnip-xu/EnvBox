@@ -14,8 +14,9 @@ import {
   FolderOpen,
   FolderCog,
   Keyboard,
+  FolderSearch,
 } from "lucide-react";
-import type { EngineStatus, HealthReport } from "../types";
+import type { EngineStatus, HealthReport, ProjectInspection } from "../types";
 import { api, errorMessage, pickDirectory } from "../lib/tauri";
 import { useStore } from "../store/useStore";
 import { LANGS, type Lang } from "../i18n";
@@ -30,10 +31,19 @@ export default function Settings() {
     useStore();
   const [mirror, setMirror] = useState(() => localStorage.getItem("envbox.mirror") ?? "rsproxy");
   const [pathDraft, setPathDraft] = useState(installPath);
+  const [project, setProject] = useState<ProjectInspection | null>(null);
+  const [inspectingProject, setInspectingProject] = useState(false);
 
   useEffect(() => {
-    api.engineStatus().then(setEngines);
-  }, [refreshKey]);
+    let cancelled = false;
+    api
+      .engineStatus()
+      .then((status) => !cancelled && setEngines(status))
+      .catch((error) => !cancelled && pushToast(t("common.loadFail", { err: errorMessage(error) }), "error"));
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey, pushToast, t]);
 
   async function runHealth() {
     setChecking(true);
@@ -59,6 +69,19 @@ export default function Settings() {
       setPathDraft(dir);
       setInstallPath(dir);
       pushToast(t("toast.saved"), "success");
+    }
+  }
+
+  async function inspectProject() {
+    const dir = await pickDirectory();
+    if (!dir) return;
+    setInspectingProject(true);
+    try {
+      setProject(await api.inspectProject(dir));
+    } catch (e) {
+      pushToast(t("settings.project.fail", { err: errorMessage(e) }), "error");
+    } finally {
+      setInspectingProject(false);
     }
   }
 
@@ -172,6 +195,45 @@ export default function Settings() {
             </button>
           )}
         </div>
+      </div>
+
+      {/* 项目级版本声明 */}
+      <div className="card p-4 xl:col-span-2">
+        <div className="flex items-center gap-3">
+          <FolderSearch size={20} className="text-brand-300" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-neutral-200">{t("settings.project.title")}</div>
+            <div className="text-xs text-neutral-500">{t("settings.project.desc")}</div>
+          </div>
+          <button className="btn-ghost border border-neutral-800" onClick={inspectProject} disabled={inspectingProject}>
+            {inspectingProject ? (
+              <Loader2 size={15} className="animate-spin" aria-hidden="true" />
+            ) : (
+              <FolderOpen size={15} aria-hidden="true" />
+            )}
+            {t("settings.project.choose")}
+          </button>
+        </div>
+        {project && (
+          <div className="mt-4 border-t border-neutral-800 pt-3">
+            <div className="truncate font-mono text-xs text-neutral-500" title={project.path}>
+              {project.path}
+            </div>
+            {project.hints.length === 0 ? (
+              <p className="mt-3 text-sm text-neutral-500">{t("settings.project.empty")}</p>
+            ) : (
+              <div className="mt-3 divide-y divide-neutral-800 rounded-lg border border-neutral-800">
+                {project.hints.map((hint) => (
+                  <div key={`${hint.tool}-${hint.source}`} className="flex items-center gap-3 px-3 py-2.5">
+                    <span className="w-28 shrink-0 text-sm font-medium text-neutral-200">{hint.tool}</span>
+                    <code className="min-w-0 flex-1 truncate text-sm text-brand-300">{hint.version}</code>
+                    <span className="font-mono text-xs text-neutral-500">{hint.source}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 下载镜像源 */}

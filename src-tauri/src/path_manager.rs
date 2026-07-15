@@ -54,6 +54,18 @@ fn raw_path_of(scope: &str) -> Vec<String> {
         .collect()
 }
 
+fn path_status(resolved: &str) -> (&'static str, bool, bool) {
+    if resolved.contains('%') {
+        ("unresolved", false, false)
+    } else if Path::new(resolved).is_dir() {
+        ("available", true, false)
+    } else if resolved.starts_with("\\\\") {
+        ("networkUnavailable", false, false)
+    } else {
+        ("missing", false, true)
+    }
+}
+
 pub fn get_path_entries() -> Vec<PathEntry> {
     let vars = env_registry::all_vars_map();
     let mut seen: HashSet<String> = HashSet::new();
@@ -64,13 +76,15 @@ pub fn get_path_entries() -> Vec<PathEntry> {
             let resolved = win::expand_vars(&raw, &vars);
             let key = resolved.to_lowercase().trim_end_matches('\\').to_string();
             let duplicate = !seen.insert(key);
-            let exists = Path::new(&resolved).is_dir();
+            let (status, exists, safe_to_clean) = path_status(&resolved);
             let sdk_tag = if exists { sdk_tag_for(&resolved) } else { None };
             out.push(PathEntry {
                 raw,
                 resolved,
                 scope: scope.into(),
                 exists,
+                status: status.into(),
+                safe_to_clean,
                 duplicate,
                 sdk_tag,
                 enabled: true,
@@ -104,7 +118,7 @@ pub fn clean_invalid(scope: &str) -> Result<usize, String> {
         .filter(|raw| {
             let resolved = win::expand_vars(raw, &vars);
             // 未解析变量、UNC/网络位置可能只是暂时不可访问，不自动删除。
-            resolved.contains('%') || resolved.starts_with("\\\\") || Path::new(&resolved).is_dir()
+            !path_status(&resolved).2
         })
         .cloned()
         .collect();
@@ -151,7 +165,7 @@ pub fn dedupe(scope: &str) -> Result<usize, String> {
 pub fn scan_orphans() -> Vec<PathEntry> {
     get_path_entries()
         .into_iter()
-        .filter(|e| !e.exists)
+        .filter(|e| e.safe_to_clean)
         .collect()
 }
 
@@ -184,5 +198,17 @@ mod tests {
         assert!(validate_path_entries("user", &["C:\\Tools\\bin".into()]).is_ok());
         assert!(validate_path_entries("process", &[]).is_err());
         assert!(validate_path_entries("user", &["C:\\A;C:\\B".into()]).is_err());
+    }
+
+    #[test]
+    fn path_status_preserves_unc_and_unresolved_entries() {
+        assert_eq!(path_status("%MISSING_HOME%\\bin").0, "unresolved");
+        assert!(!path_status("%MISSING_HOME%\\bin").2);
+        assert_eq!(
+            path_status("\\\\server\\offline-share").0,
+            "networkUnavailable"
+        );
+        assert!(!path_status("\\\\server\\offline-share").2);
+        assert!(path_status("Z:\\definitely-missing-envbox-path").2);
     }
 }

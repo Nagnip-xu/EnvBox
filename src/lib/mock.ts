@@ -13,13 +13,14 @@ export const mockEnvVars: EnvVar[] = [
 ];
 
 export const mockPathEntries: PathEntry[] = [
-  { raw: "%JAVA_HOME%\\bin", resolved: "D:\\DevTools\\jdk-17\\bin", scope: "system", exists: true, duplicate: false, sdkTag: "JDK 17", enabled: true },
-  { raw: "C:\\Program Files\\nodejs", resolved: "C:\\Program Files\\nodejs", scope: "system", exists: true, duplicate: false, sdkTag: "Node 24", enabled: true },
-  { raw: "D:\\DevTools\\Rust\\.cargo\\bin", resolved: "D:\\DevTools\\Rust\\.cargo\\bin", scope: "user", exists: true, duplicate: false, sdkTag: "Rust", enabled: true },
-  { raw: "C:\\Python39\\Scripts", resolved: "C:\\Python39\\Scripts", scope: "user", exists: false, duplicate: false, enabled: true },
-  { raw: "C:\\Program Files\\Go\\bin", resolved: "C:\\Program Files\\Go\\bin", scope: "system", exists: true, duplicate: false, sdkTag: "Go", enabled: true },
-  { raw: "C:\\Program Files\\nodejs", resolved: "C:\\Program Files\\nodejs", scope: "user", exists: true, duplicate: true, sdkTag: "Node 24", enabled: true },
-  { raw: "C:\\Windows\\System32", resolved: "C:\\Windows\\System32", scope: "system", exists: true, duplicate: false, enabled: true },
+  { raw: "%JAVA_HOME%\\bin", resolved: "D:\\DevTools\\jdk-17\\bin", scope: "system", exists: true, status: "available", safeToClean: false, duplicate: false, sdkTag: "JDK 17", enabled: true },
+  { raw: "C:\\Program Files\\nodejs", resolved: "C:\\Program Files\\nodejs", scope: "system", exists: true, status: "available", safeToClean: false, duplicate: false, sdkTag: "Node 24", enabled: true },
+  { raw: "D:\\DevTools\\Rust\\.cargo\\bin", resolved: "D:\\DevTools\\Rust\\.cargo\\bin", scope: "user", exists: true, status: "available", safeToClean: false, duplicate: false, sdkTag: "Rust", enabled: true },
+  { raw: "C:\\Python39\\Scripts", resolved: "C:\\Python39\\Scripts", scope: "user", exists: false, status: "missing", safeToClean: true, duplicate: false, enabled: true },
+  { raw: "%UNSET_SDK_HOME%\\bin", resolved: "%UNSET_SDK_HOME%\\bin", scope: "user", exists: false, status: "unresolved", safeToClean: false, duplicate: false, enabled: true },
+  { raw: "C:\\Program Files\\Go\\bin", resolved: "C:\\Program Files\\Go\\bin", scope: "system", exists: true, status: "available", safeToClean: false, duplicate: false, sdkTag: "Go", enabled: true },
+  { raw: "C:\\Program Files\\nodejs", resolved: "C:\\Program Files\\nodejs", scope: "user", exists: true, status: "available", safeToClean: false, duplicate: true, sdkTag: "Node 24", enabled: true },
+  { raw: "C:\\Windows\\System32", resolved: "C:\\Windows\\System32", scope: "system", exists: true, status: "available", safeToClean: false, duplicate: false, enabled: true },
 ];
 
 export const mockSdks: SdkVersion[] = [
@@ -27,7 +28,7 @@ export const mockSdks: SdkVersion[] = [
   { kind: "jdk", version: "8u402 (Temurin)", home: "C:\\Program Files\\Java\\jdk-8", isCurrent: false, source: "scan" },
   { kind: "jdk", version: "21.0.2 (GraalVM)", home: "D:\\DevTools\\graalvm-21", isCurrent: false, source: "envbox" },
   { kind: "node", version: "24.18.0", home: "C:\\Program Files\\nodejs", isCurrent: true, source: "scan" },
-  { kind: "node", version: "18.19.1", home: "C:\\Users\\me\\.nvm\\v18.19.1", isCurrent: false, source: "scan" },
+  { kind: "node", version: "18.19.1", home: "C:\\Users\\me\\nvm\\v18.19.1", isCurrent: false, source: "scan", manager: "nvm" },
   { kind: "python", version: "3.11.8", home: "C:\\Python311", isCurrent: true, source: "scan" },
   { kind: "python", version: "3.9.13", home: "C:\\Python39", isCurrent: false, source: "scan" },
   { kind: "go", version: "1.22.1", home: "C:\\Program Files\\Go", isCurrent: true, source: "scan" },

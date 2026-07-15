@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { translate, LANGS } from "./i18n";
 import { resolveTheme, applyTheme } from "./theme";
-import { errorMessage } from "./lib/tauri";
+import { errorCode, errorMessage } from "./lib/tauri";
+import { displaySensitiveValue, isSensitiveName } from "./lib/security";
 
 describe("i18n", () => {
   it("returns zh translation by default key", () => {
@@ -48,5 +49,16 @@ describe("tauri error formatting", () => {
   it("normalizes strings and Error objects", () => {
     expect(errorMessage("permission denied")).toBe("permission denied");
     expect(errorMessage(new Error("snapshot failed"))).toBe("snapshot failed");
+    expect(errorCode({ code: "PERMISSION_DENIED", message: "denied" })).toBe(
+      "PERMISSION_DENIED"
+    );
+  });
+});
+
+describe("sensitive values", () => {
+  it("detects and masks common secret names", () => {
+    expect(isSensitiveName("GITHUB_TOKEN")).toBe(true);
+    expect(isSensitiveName("JAVA_HOME")).toBe(false);
+    expect(displaySensitiveValue("secret", true)).toBe("••••••••••••");
   });
 });

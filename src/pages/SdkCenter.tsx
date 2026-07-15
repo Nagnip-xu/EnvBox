@@ -107,17 +107,18 @@ export default function SdkCenter() {
       setEngines(nextEngines);
       setRefreshing(false);
       setLoading(false);
-    }).catch(() => {
+    }).catch((error) => {
       if (!cancelled) {
         setRefreshing(false);
         setLoading(false);
+        pushToast(t("common.loadFail", { err: errorMessage(error) }), "error");
       }
     });
 
     return () => {
       cancelled = true;
     };
-  }, [page, refreshKey]);
+  }, [page, refreshKey, pushToast, t]);
 
   const byKind = useMemo(() => {
     const m = new Map<SdkKind, SdkVersion[]>();
@@ -205,6 +206,11 @@ export default function SdkCenter() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-neutral-100">{s.version}</span>
                       {s.isCurrent && <span className="tag tag-brand">{t("sdk.current")}</span>}
+                      {s.manager && (
+                        <span className="tag tag-amber">
+                          {t("sdk.managedBy", { manager: s.manager })}
+                        </span>
+                      )}
                     </div>
                     <div className="truncate font-mono text-xs text-neutral-500">{s.home}</div>
                   </div>
@@ -281,7 +287,8 @@ export default function SdkCenter() {
         title={t("sdk.switchTitle")}
         message={t("sdk.switchMsg", {
           target: switchTarget ? formatSwitchTarget(switchTarget.kind, switchTarget.version) : "",
-        })}
+        }) + (switchTarget?.manager ? `\n\n${t("sdk.managerSwitchTip", { manager: switchTarget.manager })}` : "")}
+        danger={!!switchTarget?.manager}
         confirmLabel={t("sdk.setCurrent")}
         onConfirm={() => {
           if (switchTarget) doSwitch(switchTarget);

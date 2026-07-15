@@ -1,28 +1,53 @@
 import { useEffect, useState } from "react";
-import { History, RotateCcw, Camera, ScrollText, Trash2, Clock } from "lucide-react";
-import type { AuditEntry, Snapshot } from "../types";
+import {
+  History,
+  RotateCcw,
+  Camera,
+  ScrollText,
+  Trash2,
+  Clock,
+  Loader2,
+  ShieldAlert,
+} from "lucide-react";
+import type { AuditEntry, Snapshot, SnapshotPreview } from "../types";
 import { api, errorMessage } from "../lib/tauri";
 import { useStore } from "../store/useStore";
 import ConfirmModal from "../components/ConfirmModal";
 import Modal from "../components/Modal";
+import { displaySensitiveValue } from "../lib/security";
 
 export default function Snapshots() {
   const [snaps, setSnaps] = useState<Snapshot[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
+  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"snaps" | "audit">("snaps");
-  const [restore, setRestore] = useState<Snapshot | null>(null);
+  const [restorePreview, setRestorePreview] = useState<SnapshotPreview | null>(null);
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
   const [del, setDel] = useState<Snapshot | null>(null);
   const [creating, setCreating] = useState(false);
   const [snapName, setSnapName] = useState("");
-  const [retention, setRetention] = useState<number>(() =>
-    Number(localStorage.getItem("envbox.snapRetention") ?? "0")
-  );
+  const [retention, setRetention] = useState<number>(() => {
+    const stored = Number(localStorage.getItem("envbox.snapRetention") ?? "0");
+    return [0, 7, 30, 90].includes(stored) ? stored : 0;
+  });
   const { refreshKey, bumpRefresh, pushToast, t } = useStore();
 
   useEffect(() => {
-    api.listSnapshots().then(setSnaps);
-    api.listAudit().then(setAudit);
-  }, [refreshKey]);
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([api.listSnapshots(), api.listAudit()])
+      .then(([nextSnaps, nextAudit]) => {
+        if (cancelled) return;
+        setSnaps(nextSnaps);
+        setAudit(nextAudit);
+      })
+      .catch((error) => !cancelled && pushToast(t("common.loadFail", { err: errorMessage(error) }), "error"))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey, pushToast, t]);
 
   useEffect(() => {
     if (retention > 0) {
@@ -77,13 +102,36 @@ export default function Snapshots() {
   }
 
   async function doRestore() {
-    if (!restore) return;
+    if (!restorePreview) return;
+    setRestoring(true);
     try {
-      await api.restoreSnapshot(restore.id);
+      await api.restoreSnapshot(restorePreview.snapshotId);
       pushToast(t("toast.snapRestored"), "success");
+      setRestorePreview(null);
       bumpRefresh();
     } catch (e) {
       pushToast(t("toast.snapRestoreFail", { err: errorMessage(e) }), "error");
+    } finally {
+      setRestoring(false);
+    }
+  }
+
+  async function openRestore(snapshot: Snapshot) {
+    setPreviewingId(snapshot.id);
+    try {
+      setRestorePreview(await api.previewSnapshotRestore(snapshot.id));
+    } catch (e) {
+      pushToast(t("toast.snapRestoreFail", { err: errorMessage(e) }), "error");
+    } finally {
+      setPreviewingId(null);
+    }
+  }
+
+  async function relaunchAdmin() {
+    try {
+      await api.relaunchAsAdmin();
+    } catch (e) {
+      pushToast(t("toast.relaunchFail", { err: errorMessage(e) }), "error");
     }
   }
 
@@ -121,7 +169,10 @@ export default function Snapshots() {
 
       {tab === "snaps" ? (
         <div className="card divide-y divide-neutral-800">
-          {snaps.length === 0 && (
+          {loading && (
+            <div className="px-4 py-6 text-center text-sm text-neutral-500">{t("common.loading")}</div>
+          )}
+          {!loading && snaps.length === 0 && (
             <div className="px-4 py-6 text-center text-sm text-neutral-600">{t("snap.empty")}</div>
           )}
           {snaps.map((s) => (
@@ -133,8 +184,17 @@ export default function Snapshots() {
                 <div className="truncate text-sm text-neutral-200">{s.description}</div>
                 <div className="text-xs text-neutral-500">{s.createdAt}</div>
               </div>
-              <button className="btn-ghost border border-neutral-800 !py-1" onClick={() => setRestore(s)}>
-                <RotateCcw size={15} /> {t("snap.restore")}
+              <button
+                className="btn-ghost border border-neutral-800 !py-1"
+                disabled={previewingId === s.id}
+                onClick={() => openRestore(s)}
+              >
+                {previewingId === s.id ? (
+                  <Loader2 size={15} className="animate-spin" aria-hidden="true" />
+                ) : (
+                  <RotateCcw size={15} aria-hidden="true" />
+                )}
+                {t("snap.restore")}
               </button>
               <button
                 className="btn-ghost !px-2 !py-1 hover:!text-rose-400"
@@ -149,7 +209,10 @@ export default function Snapshots() {
         </div>
       ) : (
         <div className="card divide-y divide-neutral-800">
-          {audit.length === 0 && (
+          {loading && (
+            <div className="px-4 py-6 text-center text-sm text-neutral-500">{t("common.loading")}</div>
+          )}
+          {!loading && audit.length === 0 && (
             <div className="px-4 py-6 text-center text-sm text-neutral-600">{t("snap.auditEmpty")}</div>
           )}
           {audit.map((a, i) => (
@@ -189,18 +252,110 @@ export default function Snapshots() {
         </div>
       </Modal>
 
-      <ConfirmModal
-        open={!!restore}
+      <Modal
+        open={!!restorePreview}
         title={t("snap.restoreTitle")}
-        message={t("snap.restoreMsg", {
-          desc: restore?.description ?? "",
-          time: restore?.createdAt ?? "",
-        })}
-        danger
-        confirmLabel={t("snap.restore")}
-        onConfirm={doRestore}
-        onClose={() => setRestore(null)}
-      />
+        onClose={restoring ? () => {} : () => setRestorePreview(null)}
+        width="max-w-3xl"
+      >
+        {restorePreview && (
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-medium text-neutral-200">{restorePreview.description}</p>
+              <p className="mt-1 text-xs text-neutral-500">{restorePreview.createdAt}</p>
+            </div>
+
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className="tag bg-neutral-800 text-neutral-300">
+                {t("snap.diff.total", { n: restorePreview.changes.length })}
+              </span>
+              <span className="tag tag-brand">
+                {t("snap.diff.user", { n: restorePreview.userChanges })}
+              </span>
+              <span className="tag tag-amber">
+                {t("snap.diff.system", { n: restorePreview.systemChanges })}
+              </span>
+            </div>
+
+            {restorePreview.requiresElevation && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">
+                <ShieldAlert size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <span>{t("snap.diff.adminRequired")}</span>
+              </div>
+            )}
+
+            <div className="max-h-80 overflow-y-auto rounded-lg border border-neutral-800">
+              {restorePreview.changes.length === 0 ? (
+                <div className="p-6 text-center text-sm text-neutral-500">{t("snap.diff.none")}</div>
+              ) : (
+                restorePreview.changes.map((change) => (
+                  <div
+                    key={`${change.scope}-${change.name}`}
+                    className="border-b border-neutral-800 p-3 last:border-b-0"
+                  >
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className="font-mono text-sm text-neutral-200">{change.name}</span>
+                      <span className="tag bg-neutral-800 text-neutral-400">
+                        {t(`scope.${change.scope}.short`)}
+                      </span>
+                      <span
+                        className={`tag ${
+                          change.kind === "delete"
+                            ? "tag-rose"
+                            : change.kind === "add"
+                              ? "tag-emerald"
+                              : "tag-amber"
+                        }`}
+                      >
+                        {t(`snap.diff.${change.kind}`)}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 font-mono text-xs">
+                      <span className="truncate rounded bg-neutral-950 px-2 py-1.5 text-neutral-500">
+                        {displaySensitiveValue(change.before, change.sensitive)}
+                      </span>
+                      <span className="text-neutral-600">→</span>
+                      <span className="truncate rounded bg-neutral-950 px-2 py-1.5 text-neutral-300">
+                        {displaySensitiveValue(change.after, change.sensitive)}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <p className="text-xs text-neutral-500">{t("confirm.snapNote")}</p>
+            <div className="flex justify-end gap-2">
+              <button
+                className="btn-ghost border border-neutral-800"
+                disabled={restoring}
+                onClick={() => setRestorePreview(null)}
+              >
+                {t("common.cancel")}
+              </button>
+              {restorePreview.requiresElevation ? (
+                <button className="btn-primary" onClick={relaunchAdmin}>
+                  <ShieldAlert size={15} aria-hidden="true" />
+                  {t("settings.perm.relaunch")}
+                </button>
+              ) : (
+                <button
+                  className="btn bg-rose-600 text-white hover:bg-rose-500"
+                  disabled={restoring || restorePreview.changes.length === 0}
+                  onClick={doRestore}
+                >
+                  {restoring ? (
+                    <Loader2 size={15} className="animate-spin" aria-hidden="true" />
+                  ) : (
+                    <RotateCcw size={15} aria-hidden="true" />
+                  )}
+                  {t("snap.restore")}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <ConfirmModal
         open={!!del}

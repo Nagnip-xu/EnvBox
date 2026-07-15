@@ -15,7 +15,8 @@
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --lib",
     "test:smoke": "cargo test --manifest-path src-tauri/Cargo.toml --test smoke",
     "test:all": "npm test && npm run test:rust && npm run test:smoke",
-    "check": "npm run build && npm run test:all"
+    "check:version": "\"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File scripts/check-version.ps1",
+    "check": "npm run check:version && npm run build && npm run test:all && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.1",

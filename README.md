@@ -9,7 +9,9 @@ EnvBox 是一款面向 Windows 的开发环境管理桌面工具，用于查看�
 - 扫描并切换 JDK、Python、Node.js、Go、Rust、.NET 等开发工具
 - 通过 winget 或 Scoop 安装受支持的 SDK
 - 创建、恢复和清理环境快照
+- 恢复前预览变量新增、修改和删除差异，失败时自动回滚
 - 导入、导出与环境健康检查
+- 只读识别项目中的 `.nvmrc`、`.python-version`、`.tool-versions`、`global.json` 和构建 Wrapper
 - 简体中文、繁体中文、英语、日语及深浅主题
 
 ## 安全原则
@@ -17,6 +19,7 @@ EnvBox 是一款面向 Windows 的开发环境管理桌面工具，用于查看�
 - 写操作必须先成功创建快照，否则取消操作
 - 未提权时不修改系统级变量
 - 未找到可信卸载器时不递归删除外部 SDK 目录
+- 识别 nvm、fnm、Volta、Conda、rustup、Jabba 管理的版本，不与其争用 PATH
 - 导入文件先检查尺寸、格式、版本和变量内容
 - 疑似令牌、密码和密钥的变量值在列表中默认遮蔽
 
@@ -42,9 +45,12 @@ npm run tauri dev
 ```powershell
 npm run build
 npm run test:all
+npm run check
 ```
 
 自动化测试包含前端工具测试、Rust 单元测试和 Windows 只读冒烟测试。涉及注册表写入、提权、安装与卸载的功能仍应在一次性 Windows 虚拟机中按 [TEST_CHECKLIST.md](./TEST_CHECKLIST.md) 完成人工回归。
+
+`npm run check` 还会检查四处版本号一致性、Rust 格式和严格 Clippy。仓库包含 Windows GitHub Actions 工作流，推送到 GitHub 后会自动执行同类检查及 Tauri 桌面构建。
 
 ## 设计资料
 

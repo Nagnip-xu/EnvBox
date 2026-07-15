@@ -5,15 +5,13 @@ import { api, errorMessage } from "../lib/tauri";
 import { useStore } from "../store/useStore";
 import Modal from "../components/Modal";
 import ConfirmModal from "../components/ConfirmModal";
+import { isSensitiveName } from "../lib/security";
 
 const SCOPE_KEY: Record<EnvScope, string> = {
   system: "scope.system",
   user: "scope.user",
   process: "scope.process",
 };
-
-const SENSITIVE_NAME =
-  /(TOKEN|SECRET|PASSWORD|PASSWD|API[_-]?KEY|PRIVATE[_-]?KEY|CONNECTION[_-]?STRING|CREDENTIAL)/i;
 
 interface EditState {
   scope: "system" | "user";
@@ -24,13 +22,23 @@ interface EditState {
 
 export default function Dashboard() {
   const [vars, setVars] = useState<EnvVar[]>([]);
+  const [loading, setLoading] = useState(true);
   const { search, refreshKey, bumpRefresh, pushToast, pendingNewVar, clearNewVar, t } = useStore();
   const [edit, setEdit] = useState<EditState | null>(null);
   const [del, setDel] = useState<EnvVar | null>(null);
 
   useEffect(() => {
-    api.listEnvVars().then(setVars);
-  }, [refreshKey]);
+    let cancelled = false;
+    setLoading(true);
+    api
+      .listEnvVars()
+      .then((items) => !cancelled && setVars(items))
+      .catch((error) => !cancelled && pushToast(t("common.loadFail", { err: errorMessage(error) }), "error"))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey, pushToast, t]);
 
   useEffect(() => {
     if (pendingNewVar) {
@@ -92,7 +100,10 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="card divide-y divide-neutral-800">
-              {items.length === 0 && (
+              {loading && (
+                <div className="px-4 py-6 text-center text-sm text-neutral-500">{t("common.loading")}</div>
+              )}
+              {!loading && items.length === 0 && (
                 <div className="px-4 py-6 text-center text-sm text-neutral-600">{t("dash.noMatch")}</div>
               )}
               {items.map((v) => (
@@ -202,7 +213,7 @@ function VarRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const sensitive = SENSITIVE_NAME.test(v.name);
+  const sensitive = isSensitiveName(v.name);
   const [revealed, setRevealed] = useState(false);
   return (
     <div className="group flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-800/40">

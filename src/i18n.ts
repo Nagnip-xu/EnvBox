@@ -84,6 +84,46 @@ const dict: Record<string, Entry> = {
     en: "Hide sensitive value",
     ja: "機密値を隠す",
   },
+  "common.loading": { zh: "正在加载…", zhHant: "正在載入…", en: "Loading…", ja: "読み込み中…" },
+  "common.loadFail": {
+    zh: "加载失败：{err}",
+    zhHant: "載入失敗：{err}",
+    en: "Failed to load: {err}",
+    ja: "読み込みに失敗しました：{err}",
+  },
+  "snap.diff.total": {
+    zh: "共 {n} 项变化",
+    zhHant: "共 {n} 項變更",
+    en: "{n} changes",
+    ja: "{n} 件の変更",
+  },
+  "snap.diff.user": {
+    zh: "用户变量 {n}",
+    zhHant: "使用者變數 {n}",
+    en: "User variables {n}",
+    ja: "ユーザー変数 {n}",
+  },
+  "snap.diff.system": {
+    zh: "系统变量 {n}",
+    zhHant: "系統變數 {n}",
+    en: "System variables {n}",
+    ja: "システム変数 {n}",
+  },
+  "snap.diff.add": { zh: "新增", zhHant: "新增", en: "Add", ja: "追加" },
+  "snap.diff.modify": { zh: "修改", zhHant: "修改", en: "Modify", ja: "変更" },
+  "snap.diff.delete": { zh: "删除", zhHant: "刪除", en: "Delete", ja: "削除" },
+  "snap.diff.none": {
+    zh: "当前环境已与该快照一致，无需恢复。",
+    zhHant: "目前環境已與該快照一致，無需還原。",
+    en: "The current environment already matches this snapshot.",
+    ja: "現在の環境はこのスナップショットと一致しています。",
+  },
+  "snap.diff.adminRequired": {
+    zh: "该恢复会修改系统变量，需要管理员权限。当前不会执行任何变量修改。",
+    zhHant: "此還原會修改系統變數，需要系統管理員權限。目前不會執行任何變數修改。",
+    en: "This restore changes system variables and requires administrator privileges. No variables will be changed yet.",
+    ja: "この復元はシステム変数を変更するため、管理者権限が必要です。現時点では変数は変更されません。",
+  },
 
   // ── 作用域 ───────────────────────────────────
   "scope.system": { zh: "系统变量", zhHant: "系統變數", en: "System Variables", ja: "システム変数" },
@@ -141,6 +181,18 @@ const dict: Record<string, Entry> = {
   "path.stat.length": { zh: "PATH 长度", zhHant: "PATH 長度", en: "PATH Length", ja: "PATH 長" },
   "path.unit.chars": { zh: " 字符", zhHant: " 字元", en: " chars", ja: " 文字" },
   "path.clean": { zh: "一键清理无效项", zhHant: "一鍵清理無效項", en: "Clean Invalid", ja: "無効項目を一括整理" },
+  "path.status.unresolved": {
+    zh: "变量未解析",
+    zhHant: "變數未解析",
+    en: "Unresolved variable",
+    ja: "変数未解決",
+  },
+  "path.status.network": {
+    zh: "网络位置不可用",
+    zhHant: "網路位置無法使用",
+    en: "Network location unavailable",
+    ja: "ネットワーク場所を利用不可",
+  },
   "path.dedupe": { zh: "去重", zhHant: "去重", en: "Deduplicate", ja: "重複を削除" },
   "path.reorderTip": {
     zh: "提示：拖动左侧手柄可在同一作用域内调整 PATH 顺序（越靠前优先级越高）。",
@@ -223,6 +275,18 @@ const dict: Record<string, Entry> = {
   "sdk.envVar": { zh: "环境变量：{var}", zhHant: "環境變數：{var}", en: "Env var: {var}", ja: "環境変数：{var}" },
   "sdk.installNew": { zh: "下载安装新版本", zhHant: "下載安裝新版本", en: "Install New Version", ja: "新バージョンを追加" },
   "sdk.current": { zh: "当前", zhHant: "目前", en: "Current", ja: "現在" },
+  "sdk.managedBy": {
+    zh: "由 {manager} 管理",
+    zhHant: "由 {manager} 管理",
+    en: "Managed by {manager}",
+    ja: "{manager} で管理",
+  },
+  "sdk.managerSwitchTip": {
+    zh: "此版本由 {manager} 管理。EnvBox 将拒绝直接改写其 PATH，请改用 {manager} 切换。",
+    zhHant: "此版本由 {manager} 管理。EnvBox 將拒絕直接改寫其 PATH，請改用 {manager} 切換。",
+    en: "This version is managed by {manager}. EnvBox will not rewrite its PATH; switch it with {manager} instead.",
+    ja: "このバージョンは {manager} によって管理されています。EnvBox は PATH を直接変更しないため、{manager} で切り替えてください。",
+  },
   "sdk.tempTerminal": {
     zh: "用此版本打开临时终端",
     zhHant: "以此版本開啟臨時終端",
@@ -491,6 +555,36 @@ const dict: Record<string, Entry> = {
     zhHant: "例如 D:\\DevTools（留空使用預設）",
     en: "e.g. D:\\DevTools (empty for default)",
     ja: "例：D:\\DevTools（空欄で既定）",
+  },
+  "settings.project.title": {
+    zh: "项目级版本声明",
+    zhHant: "專案級版本宣告",
+    en: "Project version declarations",
+    ja: "プロジェクトのバージョン宣言",
+  },
+  "settings.project.desc": {
+    zh: "只读识别项目中的版本文件和 Wrapper，不修改项目或全局环境",
+    zhHant: "唯讀識別專案中的版本檔案和 Wrapper，不修改專案或全域環境",
+    en: "Read version files and wrappers without changing the project or global environment",
+    ja: "プロジェクトやグローバル環境を変更せず、バージョンファイルと Wrapper を読み取ります",
+  },
+  "settings.project.choose": {
+    zh: "选择项目",
+    zhHant: "選擇專案",
+    en: "Choose project",
+    ja: "プロジェクトを選択",
+  },
+  "settings.project.empty": {
+    zh: "未发现受支持的项目级版本声明。",
+    zhHant: "未發現支援的專案級版本宣告。",
+    en: "No supported project version declarations were found.",
+    ja: "対応するプロジェクトのバージョン宣言が見つかりませんでした。",
+  },
+  "settings.project.fail": {
+    zh: "检查项目失败：{err}",
+    zhHant: "檢查專案失敗：{err}",
+    en: "Project inspection failed: {err}",
+    ja: "プロジェクトの確認に失敗しました：{err}",
   },
   "settings.mirror.title": { zh: "下载镜像源", zhHant: "下載鏡像源", en: "Download Mirror", ja: "ダウンロードミラー" },
   "settings.mirror.desc": {

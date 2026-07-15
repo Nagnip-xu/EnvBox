@@ -1,11 +1,115 @@
 use crate::env_registry;
-use crate::models::{HealthReport, ImportPreview};
+use crate::models::{HealthReport, ImportPreview, ProjectInspection, ProjectVersionHint};
 use crate::path_manager;
 use crate::win;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
+
+fn read_small_text(path: &Path) -> Option<String> {
+    let metadata = std::fs::metadata(path).ok()?;
+    if !metadata.is_file() || metadata.len() > 64 * 1024 {
+        return None;
+    }
+    std::fs::read_to_string(path).ok()
+}
+
+pub fn inspect_project(path: &str) -> Result<ProjectInspection, String> {
+    let root = Path::new(path);
+    if !root.is_absolute() || !root.is_dir() {
+        return Err("项目目录不存在或不是绝对路径".into());
+    }
+    let canonical = root
+        .canonicalize()
+        .map_err(|e| format!("无法访问项目目录: {e}"))?;
+    let mut hints = Vec::new();
+    let markers = [
+        (".nvmrc", "Node.js"),
+        (".node-version", "Node.js"),
+        (".python-version", "Python"),
+        (".java-version", "JDK"),
+        (".ruby-version", "Ruby"),
+    ];
+    for (file, tool) in markers {
+        if let Some(version) = read_small_text(&canonical.join(file)) {
+            let version = version.trim();
+            if !version.is_empty() {
+                hints.push(ProjectVersionHint {
+                    tool: tool.into(),
+                    version: version.into(),
+                    source: file.into(),
+                });
+            }
+        }
+    }
+
+    if let Some(text) = read_small_text(&canonical.join(".tool-versions")) {
+        for line in text
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        {
+            let mut parts = line.split_whitespace();
+            if let (Some(tool), Some(version)) = (parts.next(), parts.next()) {
+                hints.push(ProjectVersionHint {
+                    tool: tool.into(),
+                    version: version.into(),
+                    source: ".tool-versions".into(),
+                });
+            }
+        }
+    }
+
+    if let Some(text) = read_small_text(&canonical.join("global.json")) {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+            if let Some(version) = json
+                .pointer("/sdk/version")
+                .and_then(|value| value.as_str())
+            {
+                hints.push(ProjectVersionHint {
+                    tool: ".NET SDK".into(),
+                    version: version.into(),
+                    source: "global.json".into(),
+                });
+            }
+        }
+    }
+
+    if let Some(text) = read_small_text(&canonical.join("gradle/wrapper/gradle-wrapper.properties"))
+    {
+        if let Some(url) = text
+            .lines()
+            .find_map(|line| line.strip_prefix("distributionUrl="))
+        {
+            let version = url
+                .split("gradle-")
+                .nth(1)
+                .and_then(|rest| rest.split('-').next())
+                .unwrap_or("wrapper");
+            hints.push(ProjectVersionHint {
+                tool: "Gradle".into(),
+                version: version.into(),
+                source: "gradle-wrapper.properties".into(),
+            });
+        }
+    }
+
+    if canonical.join("mvnw.cmd").is_file() || canonical.join("mvnw").is_file() {
+        hints.push(ProjectVersionHint {
+            tool: "Maven".into(),
+            version: "Wrapper".into(),
+            source: "mvnw".into(),
+        });
+    }
+
+    hints.sort_by(|a, b| a.tool.cmp(&b.tool).then(a.source.cmp(&b.source)));
+    hints.dedup_by(|a, b| a.tool == b.tool && a.version == b.version && a.source == b.source);
+    Ok(ProjectInspection {
+        path: canonical.to_string_lossy().to_string(),
+        hints,
+    })
+}
 
 /// 用指定 SDK 版本打开一个临时终端（仅该会话生效，不改全局）
 #[cfg(windows)]
@@ -60,7 +164,7 @@ pub fn open_terminal_with(_kind: &str, _home: &str) -> Result<(), String> {
 pub fn health_check() -> HealthReport {
     let vars = env_registry::list_env_vars();
     let paths = path_manager::get_path_entries();
-    let invalid: Vec<_> = paths.iter().filter(|e| !e.exists).collect();
+    let invalid: Vec<_> = paths.iter().filter(|e| e.safe_to_clean).collect();
     let dups: Vec<_> = paths.iter().filter(|e| e.duplicate).collect();
     let conflicts = vars.iter().filter(|v| v.conflicts_with.is_some()).count();
     let path_len = paths.iter().map(|e| e.raw.len() + 1).sum::<usize>();
@@ -235,5 +339,10 @@ mod tests {
         assert!(is_sensitive_name("database_password"));
         assert!(is_sensitive_name("MY_API_KEY"));
         assert!(!is_sensitive_name("JAVA_HOME"));
+    }
+
+    #[test]
+    fn small_text_reader_rejects_missing_files() {
+        assert!(read_small_text(Path::new("definitely-missing-envbox-project-file")).is_none());
     }
 }
