@@ -238,10 +238,7 @@ export async function saveDialog(defaultName: string): Promise<string | null> {
   const { save } = await import("@tauri-apps/plugin-dialog");
   return save({
     defaultPath: defaultName,
-    filters: [
-      { name: "JSON", extensions: ["json"] },
-      { name: "Env", extensions: ["env"] },
-    ],
+    filters: [{ name: "JSON", extensions: ["json"] }],
   });
 }
 

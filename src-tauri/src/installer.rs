@@ -932,7 +932,7 @@ fn cleanup_env_for_home(kind: &str, home: &str) -> Result<(), String> {
                 .filter(|s| !s.is_empty())
                 .filter(|raw| {
                     let resolved = win::expand_vars(raw, &vars).to_lowercase();
-                    !resolved.trim_end_matches('\\').starts_with(&home_l)
+                    !same_or_child_path(&resolved, &home_l)
                 })
                 .collect();
             env_registry::set_env_var(scope, "Path", &kept.join(";"))
@@ -954,6 +954,15 @@ fn cleanup_env_for_home(kind: &str, home: &str) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Returns true only when `candidate` is the directory itself or a child of it.
+/// A plain string prefix is unsafe because `C:\\Java\\21-old` is not inside
+/// `C:\\Java\\21`.
+fn same_or_child_path(candidate: &str, parent: &str) -> bool {
+    let candidate = candidate.trim_end_matches('\\').to_ascii_lowercase();
+    let parent = parent.trim_end_matches('\\').to_ascii_lowercase();
+    !parent.is_empty() && (candidate == parent || candidate.starts_with(&(parent + "\\")))
 }
 
 /// 在 Windows「卸载」注册表中查找与某安装目录匹配的卸载信息。
@@ -996,8 +1005,8 @@ fn find_uninstall_command(home: &str) -> Option<(String, String)> {
                 .trim_end_matches('\\')
                 .to_string();
             let icon_l = display_icon.to_lowercase();
-            let matched = (!loc_l.is_empty() && loc_l == home_key)
-                || (!home_key.is_empty() && icon_l.starts_with(&home_key));
+            let matched =
+                (!loc_l.is_empty() && loc_l == home_key) || same_or_child_path(&icon_l, &home_key);
             if !matched {
                 continue;
             }
@@ -1261,5 +1270,13 @@ mod tests {
         let future: InstallManifest =
             serde_json::from_str(r#"{"schemaVersion":99,"installs":[]}"#).unwrap();
         assert!(validate_manifest_schema(&future).is_err());
+    }
+
+    #[test]
+    fn path_cleanup_requires_directory_boundary() {
+        assert!(same_or_child_path("c:\\java\\21\\bin", "c:\\java\\21"));
+        assert!(same_or_child_path("c:\\java\\21", "c:\\java\\21"));
+        assert!(!same_or_child_path("c:\\java\\210\\bin", "c:\\java\\21"));
+        assert!(!same_or_child_path("c:\\java\\21-old", "c:\\java\\21"));
     }
 }

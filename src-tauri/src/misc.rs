@@ -186,6 +186,13 @@ pub fn inspect_project(path: &str) -> Result<ProjectInspection, String> {
 pub fn open_terminal_with(kind: &str, home: &str) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
 
+    if crate::sdk_scanner::kind_spec(kind).is_none() {
+        return Err("不支持的 SDK 类型".into());
+    }
+    if home.trim().is_empty() || home.contains('\0') || !Path::new(home).is_absolute() {
+        return Err("SDK 目录必须是有效的绝对路径".into());
+    }
+
     let cur_path = std::env::var("PATH").unwrap_or_default();
     let home_trim = home.trim_end_matches('\\');
     let (prepend, extra_env): (Vec<String>, Vec<(String, String)>) =
@@ -213,10 +220,9 @@ pub fn open_terminal_with(kind: &str, home: &str) -> Result<(), String> {
     let new_path = format!("{};{}", prepend.join(";"), cur_path);
 
     let mut cmd = Command::new("cmd.exe");
-    cmd.args([
-        "/K",
-        &format!("echo [EnvBox] 临时终端: {} @ {} & echo.", kind, home),
-    ]);
+    // Keep the command string static. `cmd /K` interprets metacharacters, so
+    // interpolating a user-controlled SDK path here would allow command injection.
+    cmd.args(["/K", "echo [EnvBox] temporary SDK terminal & echo."]);
     cmd.env("PATH", new_path);
     for (k, v) in extra_env {
         cmd.env(k, v);
